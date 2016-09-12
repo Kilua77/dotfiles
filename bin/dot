@@ -4,16 +4,16 @@
 #
 # `dot` handles installation, updates, things like that. Run it periodically
 # to make sure you're on the latest and greatest.
-export ZSH=$HOME/.dotfiles
+export ZSH_CFG=$HOME/.dotfiles
 
 # Set linux defaults
-$ZSH/linux/set-defaults.sh
+$ZSH_CFG/linux/set-defaults.sh
 
 echo "coucou"
 
 # Install packets
-$ZSH/apt/install.sh 2>&1
+$ZSH_CFG/apt/install.sh 2>&1
 
 # Install software
-echo "› $ZSH/script/install"
-$ZSH/script/install
+echo "› $ZSH_CFG/script/install"
+$ZSH_CFG/script/install

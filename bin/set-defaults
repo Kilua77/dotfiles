@@ -1,5 +1,5 @@
 #!/bin/sh
 #
-# Sets macOS defaults by running $ZSH/macos/set-defaults.sh.
+# Sets linux defaults by running $ZSH_CFG/linux/set-defaults.sh.
 
-exec $ZSH/macos/set-defaults.sh
+exec $ZSH_CFG/linux/set-defaults.sh

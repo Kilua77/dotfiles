@@ -1,8 +1,14 @@
-# shortcut to this dotfiles path is $ZSH
-export ZSH=$HOME/.dotfiles
+#enable all the extended expansion/globbing feature
+setopt extended_glob
+
+# shortcut to this dotfiles path is $ZSH_CFG
+export ZSH_CFG=$HOME/.dotfiles
 
 # your project folder that we can `c [tab]` to
 export PROJECTS=~/Code
+
+# Set up antigen path
+export ANTIGEN=$HOME/.antigen
 
 # Stash your environment variables in ~/.localrc. This means they'll stay out
 # of your main dotfiles repository (which may be public, like this one), but
@@ -12,9 +18,9 @@ then
   source ~/.localrc
 fi
 
-# all of our zsh files
+# all of our zsh files but antigen
 typeset -U config_files
-config_files=($ZSH/**/*.zsh)
+config_files=($ZSH_CFG/(^antigen/)#*.zsh)
 
 # load the path files
 for file in ${(M)config_files:#*/path.zsh}
@@ -39,3 +45,19 @@ do
 done
 
 unset config_files
+
+
+# Load antigen and bootstrap the configuration
+if [[ -f $ANTIGEN/antigen.zsh ]]; then
+    source $ANTIGEN/antigen.zsh
+else
+    git clone --recursive https://github.com/zsh-users/antigen $ANTIGEN
+    source $ANTIGEN/antigen.zsh
+fi
+
+if [[ "$_ANTIGEN_INIT_ENABLED" == "true" ]]; then
+  antigen init ~/.antigenrc
+else
+  source ~/.antigenrc
+fi
+
