@@ -1,5 +1,7 @@
+export TERM="xterm-256color"
+
 #enable all the extended expansion/globbing feature
-setopt extended_glob
+#setopt extended_glob
 
 # shortcut to this dotfiles path is $ZSH_CFG
 export ZSH_CFG=$HOME/.dotfiles
@@ -20,7 +22,8 @@ fi
 
 # all of our zsh files but antigen
 typeset -U config_files
-config_files=($ZSH_CFG/(^antigen/)#*.zsh)
+#config_files=($ZSH_CFG/(^antigen/)#*.zsh)
+config_files=($ZSH_CFG/**/*.zsh)
 
 # load the path files
 for file in ${(M)config_files:#*/path.zsh}
