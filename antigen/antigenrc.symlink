@@ -16,11 +16,17 @@ EOBUNDLES
 # Load the theme. Set ANTIGEN_POWERLINE to true to enable Powerline-based theme.
 # using desyncr/powerlevel9k as dritter/powerlevel9k had some problem with locals/configuration
 # move to bhilburn/powerlevel9k as soon as dritter branch is merged back into upstream
-antigen theme desyncr/powerlevel9k powerlevel9k --branch=dritter/prezto
-
-# This theme requires omz, sigh
-#antigen use oh-my-zsh
-#antigen theme desyncr/zshrc themes/af-magic-mod
+#antigen theme desyncr/powerlevel9k powerlevel9k --branch=dritter/prezto
+if ( ! $THEME_POWERLINE ); then
+    # This theme requires omz, sigh
+    antigen use oh-my-zsh
+    antigen theme desyncr/zshrc themes/af-magic-mod
+else
+    # use powerline based theme
+    #antigen theme bhilburn/powerlevel9k powerlevel9k
+    antigen use oh-my-zsh
+    antigen theme jeremyFreeAgent/oh-my-zsh-powerline-theme powerline
+fi
 
 # Tell antigen that you're done.
 antigen apply
