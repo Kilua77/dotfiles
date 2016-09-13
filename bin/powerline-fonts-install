@@ -1,0 +1,13 @@
+# Fonts dowload from dedicated repo
+wget https://github.com/powerline/powerline/raw/develop/font/PowerlineSymbols.otf
+wget https://github.com/powerline/powerline/raw/develop/font/10-powerline-symbols.conf
+
+# move to valid X font
+sudo mv PowerlineSymbols.otf /usr/share/fonts/
+
+# Update font cache
+sudo fc-cache -vf
+
+# Install the fontconfig file
+sudo mv 10-powerline-symbols.conf /etc/fonts/conf.d/
+
