@@ -64,3 +64,6 @@ else
   source ~/.antigenrc
 fi
 
+# Load antigen postconfig to complete the install
+source $ZSH_CFG/antigen/config.zsh "POST"
+
