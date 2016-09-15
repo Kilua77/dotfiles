@@ -24,6 +24,7 @@
     Plugin 'scrooloose/nerdtree'              " file drawer
     Plugin 'tpope/vim-sleuth'                 " detect indent style (tabs vs. spaces)
     Plugin 'mileszs/ack.vim'                  " search inside files using ack. Same as command line ack utility, but use :Ack
+    Plugin 'scrooloose/nerdcommenter'         " comment stuff out 
 
     "...All your other bundles...
     if iCanHazVundle == 0

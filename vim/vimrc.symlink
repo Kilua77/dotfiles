@@ -113,6 +113,11 @@ set novisualbell
 set t_vb=
 set tm=500
 
+" Yanks go on clipboard instead
+set clipboard=unnamedplus
+" Paste from a windows or from vim
+set paste               
+
 " Add a bit extra margin to the left
 set foldcolumn=1
 
@@ -289,36 +294,27 @@ endfunc
 autocmd BufWrite *.py :call DeleteTrailingWS()
 autocmd BufWrite *.coffee :call DeleteTrailingWS()
 
-
-"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-" => Ag searching and cope displaying
-"    requires ag.vim - it's much better than vimgrep/grep
-"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-" When you press gv you Ag after the selected text
-vnoremap <silent> gv :call VisualSelection('gv', '')<CR>
-
-" Open Ag and put the cursor in the right position
-map <leader>g :Ag 
-
-" When you press <leader>r you can search and replace the selected text
-vnoremap <silent> <leader>r :call VisualSelection('replace', '')<CR>
-
-" Do :help cope if you are unsure what cope is. It's super useful!
-"
-" When you search with Ag, display your results in cope by doing:
-"   <leader>cc
-"
-" To go to the next search result do:
-"   <leader>n
-"
-" To go to the previous search results do:
-"   <leader>p
-"
-map <leader>cc :botright cope<cr>
-map <leader>co ggVGy:tabnew<cr>:set syntax=qf<cr>pgg
-map <leader>n :cn<cr>
-map <leader>p :cp<cr>
-
+" Digits direct acces (azerty)
+noremap & 1
+noremap 1 &
+noremap é 2
+noremap 2 é
+noremap " 3
+noremap 3 "
+noremap ' 4
+noremap 4 '
+noremap ( 5
+noremap 5 )
+noremap - 6
+noremap 6 -
+noremap è 7
+noremap 7 è
+noremap _ 8
+noremap 8 _
+noremap ç 9
+noremap 9 ç
+noremap à 0
+noremap 0 à
 
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " => Spell checking
