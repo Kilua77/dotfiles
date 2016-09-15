@@ -1,7 +1,7 @@
 " Setting up Vundle - the vim plugin bundler
     let iCanHazVundle=1
     let vundle_readme=expand('~/.vim/bundle/vundle/README.md')
-    if !filereadable(vundle_readme) 
+    if !filereadable(vundle_readme)
         echo "Installing Vundle.."
         echo ""
         silent !mkdir -p ~/.vim/bundle
@@ -10,21 +10,23 @@
     endif
     set nocompatible              " be iMproved, required
     filetype off                  " required
-    
+
     set rtp+=~/.vim/bundle/vundle/
-    
+
     call vundle#begin()
     Plugin 'VundleVim/Vundle.vim'
 
     "Add your bundles here
     Plugin 'Syntastic'                        " uber awesome syntax and errors highlighter
     Plugin 'altercation/vim-colors-solarized' " T-H-E colorscheme
-    Plugin 'tpope/vim-fugitive'               " So awesome, it should be illegal 
+    Plugin 'tpope/vim-fugitive'               " So awesome, it should be illegal
     Plugin 'Yggdroot/indentLine'              " displays thin vertical lines at each indentation level
     Plugin 'scrooloose/nerdtree'              " file drawer
     Plugin 'tpope/vim-sleuth'                 " detect indent style (tabs vs. spaces)
     Plugin 'mileszs/ack.vim'                  " search inside files using ack. Same as command line ack utility, but use :Ack
-    Plugin 'scrooloose/nerdcommenter'         " comment stuff out 
+    Plugin 'scrooloose/nerdcommenter'         " comment stuff out
+    Plugin 'junegunn/fzf'                 " fuzzy finder
+    Plugin 'junegunn/fzf.vim'                 " fuzzy finder
 
     "...All your other bundles...
     if iCanHazVundle == 0
@@ -33,12 +35,12 @@
         :PluginInstall
     endif
 
-    call vundle#end() 
-    
+    call vundle#end()
+
     "must be last
     filetype plugin indent on " load filetype plugins/indent settings
     colorscheme solarized
     syntax on                      " enable syntax
- 
+
 " Setting up Vundle - the vim plugin bundler end
 
