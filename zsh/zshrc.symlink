@@ -51,12 +51,7 @@ unset config_files
 
 
 # Load antigen and bootstrap the configuration
-if [[ -f $ANTIGEN/antigen.zsh ]]; then
-    source $ANTIGEN/antigen.zsh
-else
-    git clone --recursive https://github.com/zsh-users/antigen $ANTIGEN
-    source $ANTIGEN/antigen.zsh
-fi
+source $ANTIGEN/antigen.zsh
 
 if [[ "$_ANTIGEN_INIT_ENABLED" == "true" ]]; then
   antigen init ~/.antigenrc
@@ -66,4 +61,6 @@ fi
 
 # Load antigen postconfig to complete the install
 source $ZSH_CFG/antigen/config.zsh "POST"
+
+
 
