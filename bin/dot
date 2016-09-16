@@ -9,8 +9,6 @@ export ZSH_CFG=$HOME/.dotfiles
 # Set linux defaults
 $ZSH_CFG/linux/set-defaults.sh
 
-echo "coucou"
-
 # Install packets
 $ZSH_CFG/apt/install.sh 2>&1
 
