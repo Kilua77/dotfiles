@@ -1,9 +1,11 @@
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-" Original Author:
-"       Amir Salihefendic
-"       http://amix.dk - amix@amix.dk" Sections:
+" Author:
+"       Moncef
 "
+"       From Amir Salihefendic's vimrc
+"       http://amix.dk - amix@amix.dk" 
 "
+" Sections:
 "
 "    -> General
 "    -> VIM user interface
@@ -142,17 +144,16 @@ endif
 syntax enable
 
 try
-    colorscheme desert
+    colorscheme jellybeans
 catch
 endtry
 
-set background=dark
+set t_Co=256
 
 " Set extra options when running in GUI mode
 if has("gui_running")
     set guioptions-=T
     set guioptions-=e
-    set t_Co=256
     set guitablabel=%M\ %t
 endif
 
@@ -193,6 +194,10 @@ set ai "Auto indent
 set si "Smart indent
 set wrap "Wrap lines
 
+" toggle invisible characters
+set list
+set listchars=tab:→\ ,eol:¬,trail:⋅,extends:❯,precedes:❮
+set showbreak=↪
 
 """"""""""""""""""""""""""""""
 " => Visual mode related
@@ -322,6 +327,8 @@ noremap 0 à
 " remove extra whitespace
 nmap <leader><space> :%s/\s\+$<cr>
 
+" Fix indentation
+map <F7> mzgg=G`z
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " => Plugins mapping 
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -425,7 +432,7 @@ endfunction
 " Toggle between fix and relative line numbers
 function! NumberToggle()
   if(&relativenumber == 1)
-    set number
+    set norelativenumber
   else
     set relativenumber
   endif
