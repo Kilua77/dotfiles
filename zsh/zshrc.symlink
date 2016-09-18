@@ -1,4 +1,4 @@
-export TERM="xterm-256color"
+export TERM="screen-256color"
 
 #enable all the extended expansion/globbing feature
 #setopt extended_glob

@@ -218,11 +218,17 @@ map <c-space> ?
 " Disable highlight when <leader><cr> is pressed
 map <silent> <leader><cr> :noh<cr>
 
-" Smart way to move between windows
-map <C-j> <C-W>j
-map <C-k> <C-W>k
-map <C-h> <C-W>h
-map <C-l> <C-W>l
+" scroll the viewport faster
+nnoremap <C-e> 3<C-e>
+nnoremap <C-y> 3<C-y>
+
+" Switch between windows
+map <silent> <C-h> :call WinMove('h')<cr>
+map <silent> <C-j> :call WinMove('j')<cr>
+map <silent> <C-k> :call WinMove('k')<cr>
+map <silent> <C-l> :call WinMove('l')<cr>
+
+map <leader>wc :wincmd q<cr>
 
 " Close the current buffer
 map <leader>bd :Bclose<cr>:tabclose<cr>gT
@@ -232,6 +238,9 @@ map <leader>ba :bufdo bd<cr>
 
 map <leader>l :bnext<cr>
 map <leader>h :bprevious<cr>
+
+" switch between current and last buffer
+nmap <leader>. <c-^>
 
 " Useful mappings for managing tabs
 map <leader>tn :tabnew<cr>
@@ -328,7 +337,7 @@ noremap 0 à
 nmap <leader><space> :%s/\s\+$<cr>
 
 " Fix indentation
-map <F7> mzgg=G`z
+map <leader>i mzgg=G`z
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " => Plugins mapping 
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -420,6 +429,19 @@ function! VisualSelection(direction, extra_filter) range
     let @" = l:saved_reg
 endfunction
 
+" move to the window in the direction shown, or create a new window
+function! WinMove(key)
+  let t:curwin = winnr()
+  exec "wincmd ".a:key
+  if (t:curwin == winnr())
+    if (match(a:key,'[jk]'))
+      wincmd v
+    else
+      wincmd s
+    endif
+    exec "wincmd ".a:key
+  endif
+endfunction
 
 " Returns true if paste mode is enabled
 function! HasPaste()
