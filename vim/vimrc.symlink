@@ -130,7 +130,7 @@ set foldcolumn=1
 nnoremap <C-n> :call NumberToggle()<cr>
 
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-" => Plugin management with Vundle
+" => Plugin management with Vim-Plug
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 if filereadable(expand("~/.vimrc.bundles"))
   source ~/.vimrc.bundles
@@ -280,8 +280,16 @@ au BufReadPost * if line("'\"") > 1 && line("'\"") <= line("$") | exe "normal! g
 set laststatus=2
 
 " Format the status line
-set statusline=\ %{HasPaste()}%F%m%r%h\ %w\ \ CWD:\ %r%{getcwd()}%h\ \ \ Line:\ %l\ \ Column:\ %c
-
+"set statusline=\ %{HasPaste()}%F%m%r%h\ %w\ \ CWD:\ %r%{getcwd()}%h\ \ \ Line:\ %l\ \ Column:\ %c
+" airline options
+let g:airline_powerline_fonts=1
+let g:airline_left_sep=''
+let g:airline_right_sep=''
+let g:airline_theme='jeallybeans'
+let g:airline#extensions#tabline#enabled = 1 " enable airline tabline
+let g:airline#extensions#tabline#tab_min_count = 2 " only show tabline if tabs are being used (more than 1 tab open)
+let g:airline#extensions#tabline#show_buffers = 0 " do not show open buffers in tabline
+let g:airline#extensions#tabline#show_splits = 0
 
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " => Editing mappings
