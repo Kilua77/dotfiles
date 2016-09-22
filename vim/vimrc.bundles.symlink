@@ -14,7 +14,7 @@ Plug 'vim-airline/vim-airline'          " fancy statusline
 Plug 'vim-airline/vim-airline-themes'   " themes for vim-airline
 Plug 'edkolev/tmuxline.vim'             " tmux status line theme
 "utilities
-Plug 'tpope/vim-fugitive'               " So awesome, it should be illegal
+Plug 'tpope/vim-fugitive'               " Best Git wrapper
 Plug 'scrooloose/nerdtree', { 'on': ['NERDTreeToggle', 'NERDTreeFind'] } | Plug 'Xuyuanp/nerdtree-git-plugin'
 Plug 'mileszs/ack.vim'                  " search inside files using ack. Same as command line ack utility, but use :Ack
 Plug 'junegunn/fzf', { 'do': './install --bin' } | Plug 'junegunn/fzf.vim' "fuzzy finder
@@ -22,8 +22,10 @@ Plug 'junegunn/fzf', { 'do': './install --bin' } | Plug 'junegunn/fzf.vim' "fuzz
 Plug 'Yggdroot/indentLine'              " displays thin vertical lines at each indentation level
 Plug 'tpope/vim-sleuth'                 " detect indent style (tabs vs. spaces)
 Plug 'scrooloose/nerdcommenter'         " comment stuff out
+Plug 'tpope/vim-surround'               " surround text
 "content checker
 Plug 'scrooloose/syntastic'             " uber awesome syntax and errors highlighter
+Plug 'mhinz/vim-signify'                " show delta with file in version control
 call plug#end()
 " Setting up Vundle - the vim plugin bundler end
 

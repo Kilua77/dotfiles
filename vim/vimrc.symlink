@@ -280,7 +280,6 @@ au BufReadPost * if line("'\"") > 1 && line("'\"") <= line("$") | exe "normal! g
 set laststatus=2
 
 " Format the status line
-"set statusline=\ %{HasPaste()}%F%m%r%h\ %w\ \ CWD:\ %r%{getcwd()}%h\ \ \ Line:\ %l\ \ Column:\ %c
 " airline options
 let g:airline_powerline_fonts=1
 let g:airline_left_sep=''
@@ -316,8 +315,7 @@ func! DeleteTrailingWS()
   %s/\s\+$//ge
   exe "normal `z"
 endfunc
-autocmd BufWrite *.c :call DeleteTrailingWS()
-autocmd BufWrite *.h :call DeleteTrailingWS()
+autocmd BufWrite *.py :call DeleteTrailingWS()
 
 " Digits direct acces (azerty)
 noremap & 1
