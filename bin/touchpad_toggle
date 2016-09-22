@@ -1,0 +1,10 @@
+#!/bin/bash
+
+GET_STATUS=$(gsettings get org.gnome.desktop.peripherals.touchpad send-events)
+SET="gsettings set org.gnome.desktop.peripherals.touchpad send-events"
+#test current status
+if [[ $GET_STATUS == "'enabled'" ]]; then
+  eval "$SET disabled"
+else
+  eval "$SET enabled"
+fi
