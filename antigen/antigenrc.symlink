@@ -5,6 +5,7 @@ antigen use oh-my-zsh
 antigen bundle  git
 antigen bundle  command-not-found
 antigen bundle  colored-man-pages
+antigen bundle  debian
 antigen bundle  zsh-users/zsh-autosuggestions
 antigen bundle  zsh-users/zsh-completions
 antigen bundle  jimhester/per-directory-history

@@ -10,7 +10,7 @@ export ZSH_CFG=$HOME/.dotfiles
 $ZSH_CFG/linux/set-defaults.sh
 
 # Install packets
-$ZSH_CFG/apt/install.sh 2>&1
+$ZSH_CFG/apt/pkgsetup.sh 2>&1
 
 # Install software
 echo "› $ZSH_CFG/script/install"
