@@ -12,4 +12,6 @@ git
 vim
 tmux
 ack-grep
+aptitude
+meld
 #nmap

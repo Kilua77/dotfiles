@@ -5,7 +5,7 @@ DOTFILES_ROOT=$(pwd -P)
 # create tmp dir to save sources
 mkdir -p tmp && cd tmp
 # install dependencies
-sudo apt-get install git gcc make pkg-config libx11-dev libxtst-dev libxi-dev
+sudo apt-get -y install git gcc make pkg-config libx11-dev libxtst-dev libxi-dev
 # download source
 git clone https://github.com/alols/xcape.git
 # install xcape

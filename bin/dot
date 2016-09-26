@@ -7,7 +7,7 @@
 export ZSH_CFG=$HOME/.dotfiles
 
 # Set linux defaults
-$ZSH_CFG/linux/set-defaults.sh
+$ZSH_CFG/debian/set-defaults.sh
 
 # Install packets
 $ZSH_CFG/apt/pkgsetup.sh 2>&1
