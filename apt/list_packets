@@ -11,7 +11,7 @@ zsh
 git
 vim
 tmux
-ack-grep
+silversearcher-ag
 aptitude
 meld
 #nmap

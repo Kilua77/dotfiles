@@ -136,7 +136,10 @@ if filereadable(expand("~/.vimrc.bundles"))
   source ~/.vimrc.bundles
 endif
 
-
+" Use ag with Ack.vim
+if executable('ag')
+  let g:ackprg = 'ag --vimgrep'
+endif
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " => Colors and Fonts
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
