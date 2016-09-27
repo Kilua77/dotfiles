@@ -8,3 +8,4 @@ then
   alias ll="gls -l --color"
   alias la='gls -A --color'
 fi
+alias -s pdf="evince " # Auto open pdf with evince
