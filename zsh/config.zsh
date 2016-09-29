@@ -29,16 +29,10 @@ setopt complete_aliases
 
 zle -N newtab
 
-bindkey '^[^[[D' backward-word
-bindkey '^[^[[C' forward-word
-bindkey '^[[5D' beginning-of-line
-bindkey '^[[5C' end-of-line
-bindkey '^[[3~' delete-char
-bindkey '^[^N' newtab
-bindkey '^?' backward-delete-char
+bindkey "\e[1~" beginning-of-line
+bindkey "\e[4~" end-of-line
+bindkey "\e[3~" delete-char
 
-# make CapsLock behave like Ctrl:
-setxkbmap -option ctrl:nocaps
-
-# make short-pressed Ctrl behave like Escape:
-xcape -e 'Control_L=Escape'
+# Move word with Ctrl + left, right
+bindkey "\e[1;5C" forward-word
+bindkey "\e[1;5D" backward-word

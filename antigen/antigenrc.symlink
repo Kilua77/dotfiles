@@ -21,8 +21,8 @@ if ( ! $THEME_POWERLINE ); then
     antigen theme desyncr/zshrc themes/af-magic-mod
 else
     # use powerline based theme
-    #antigen theme bhilburn/powerlevel9k powerlevel9k
-    antigen theme jeremyFreeAgent/oh-my-zsh-powerline-theme powerline
+    antigen theme bhilburn/powerlevel9k powerlevel9k
+    #antigen theme jeremyFreeAgent/oh-my-zsh-powerline-theme powerline
 fi
 
 # Tell antigen that you're done.

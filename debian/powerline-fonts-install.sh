@@ -5,7 +5,7 @@ DOTFILES_ROOT=$(pwd -P)
 # create tmp dir to save sources
 mkdir -p tmp && cd tmp
 # download source
-git clone https://github.com/Kilua77/fonts.git
+git clone https://github.com/powerline/fonts.git
 # install fonts
 cd fonts
 sudo ./install.sh
