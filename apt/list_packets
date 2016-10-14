@@ -10,6 +10,8 @@
 zsh
 git
 vim
+vim-gnome
+xclip
 tmux
 silversearcher-ag
 aptitude
