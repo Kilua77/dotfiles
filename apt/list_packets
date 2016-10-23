@@ -12,9 +12,11 @@ git
 vim
 vim-gnome
 xclip
+curl
 tmux
 silversearcher-ag
 aptitude
 meld
-dconf-tools
+guake
+#dconf-tools
 #nmap

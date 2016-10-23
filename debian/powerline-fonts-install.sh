@@ -8,5 +8,5 @@ mkdir -p tmp && cd tmp
 git clone https://github.com/powerline/fonts.git
 # install fonts
 cd fonts
-sudo ./install.sh
+./install.sh
 cd $DOFILES_ROOT
