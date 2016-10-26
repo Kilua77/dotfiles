@@ -38,6 +38,9 @@ set-option -g status-keys emacs
 # Mouse
 set-option -g mouse on
 
+# Default shell
+set-option -g default-shell $SHELL
+
 # -------------------------------------------------------------------
 # Window options
 # -------------------------------------------------------------------
