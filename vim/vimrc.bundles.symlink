@@ -26,6 +26,11 @@ Plug 'tpope/vim-surround'               " surround text
 "content checker
 Plug 'scrooloose/syntastic'             " uber awesome syntax and errors highlighter
 Plug 'mhinz/vim-signify'                " show delta with file in version control
+
+if has("python")
+    Plug 'valloric/youcompleteme', { 'do': './install.py --clang-completer' } " c/c++ semantic completion
+endif
+Plug 'rdnetto/YCM-Generator', { 'branch': 'stable'} " automatic conf generation for YCM
 call plug#end()
 " Setting up Vundle - the vim plugin bundler end
 
