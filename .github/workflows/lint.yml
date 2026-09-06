@@ -143,7 +143,12 @@ jobs:
           set -euo pipefail
           # Render every *.tmpl in the repo to /dev/null: catches Go-template
           # syntax errors in ANY template, not just the scripts.
+          # EXCEPT .chezmoi.toml.tmpl: its promptStringOnce/promptChoiceOnce
+          # functions only exist when chezmoi itself renders the config
+          # template during `chezmoi init` -- they are undefined under plain
+          # `execute-template`, which would be a false failure.
           while IFS= read -r -d '' f; do
             echo "render: $f"
             chezmoi --source . execute-template < "$f" > /dev/null
-          done < <(find . -name '*.tmpl' -not -path './.git/*' -print0 | sort -z)
+          done < <(find . -name '*.tmpl' -not -path './.git/*' \
+                     -not -name '.chezmoi.toml.tmpl' -print0 | sort -z)
