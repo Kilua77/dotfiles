@@ -70,4 +70,4 @@
     nuke = push origin --delete
     # Remove every local branch already merged into the current one
     # (never the current or main branch).
-    delete-local-merged = !git branch --merged | grep -vE '^\*|main' | xargs -r git branch -d
+    delete-local-merged = !git branch --merged | grep -vE '^[*]|main' | xargs -r git branch -d
