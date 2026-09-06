@@ -1,0 +1,51 @@
+#!/bin/sh
+# Purpose:  Back up pre-existing dotfiles that chezmoi is about to overwrite,
+#           so the first `chezmoi init --apply` never destroys local state.
+# When it runs: run_once_before -- at most once per machine, BEFORE chezmoi
+#           deploys any file.
+# How to re-trigger: chezmoi records run_once state in its database; reset it
+#           with `chezmoi state delete-bucket --bucket=scriptState` followed by
+#           `chezmoi apply` (this re-enables ALL run_once scripts -- do it
+#           deliberately). The -e/-l checks below keep it safe even then.
+
+set -u
+
+stamp="$(date +%Y%m%d-%H%M%S)"
+backup_dir="$HOME/dotfiles-backup-$stamp"
+
+# Everything chezmoi manages (relative to $HOME). Files and directories are
+# both handled; relative paths are preserved inside the backup directory.
+set -- \
+    .zshrc \
+    .zshenv \
+    .zprofile \
+    .gitconfig \
+    .gitignore \
+    .tmux.conf \
+    .clang-format \
+    .clang-tidy \
+    .config/nvim \
+    .claude/settings.json
+
+found=0
+for rel in "$@"; do
+    src="$HOME/$rel"
+    if [ -e "$src" ] || [ -L "$src" ]; then
+        dst="$backup_dir/$rel"
+        mkdir -p "$(dirname "$dst")"
+        if cp -a "$src" "$dst"; then
+            echo "backup: $rel -> $dst"
+            found=1
+        else
+            echo "WARN: could not back up $rel (left in place)"
+        fi
+    fi
+done
+
+if [ "$found" -eq 0 ]; then
+    echo "backup: nothing to back up (fresh machine)"
+else
+    echo "backup: previous dotfiles saved in $backup_dir"
+fi
+
+exit 0

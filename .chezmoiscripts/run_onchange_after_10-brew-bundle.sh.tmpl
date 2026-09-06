@@ -1,0 +1,37 @@
+{{ if ne .chezmoi.os "darwin" -}}
+#!/bin/sh
+# Non-darwin: Homebrew bundle is macOS-only (Linux uses apt; see
+# run_onchange_after_11-apt-packages.sh.tmpl). Rendered as shebang + exit 0 so
+# chezmoi still sees a valid script whose content hash stays stable.
+exit 0
+{{ else -}}
+#!/bin/sh
+# hash: {{ include "Brewfile" | sha256sum }}
+# Purpose:  Install/refresh macOS packages declared in the repo's Brewfile.
+# When it runs: run_onchange_after -- whenever the rendered content of this
+#           script changes. The `# hash:` line above embeds the sha256 of
+#           Brewfile, so editing the Brewfile is what re-triggers this script.
+# How to re-trigger: edit the Brewfile, then `chezmoi apply`. To force a run
+#           without editing it: `chezmoi state delete-bucket --bucket=scriptState
+#           && chezmoi apply` (re-enables all script state -- use sparingly).
+# Failure policy: brew bundle itself reports per-formula failures; a non-zero
+#           exit is downgraded to a WARN so the apply continues.
+
+set -eu
+
+# --- Sanity guard -----------------------------------------------------------
+# Homebrew must already be installed; we never install it from a dotfile.
+command -v brew >/dev/null 2>&1 || {
+    echo "WARN: brew missing -- install Homebrew first (https://brew.sh)"
+    exit 0
+}
+
+# --- Apply the bundle -------------------------------------------------------
+# chezmoi runs scripts with cwd = the source directory, so a bare "Brewfile"
+# resolves correctly during `chezmoi apply`; ${CHEZMOI_SOURCE_DIR:-.} covers
+# running the rendered script by hand from anywhere.
+brew bundle --file="${CHEZMOI_SOURCE_DIR:-.}/Brewfile" \
+    || echo "WARN: brew bundle reported failures (continuing)"
+
+exit 0
+{{ end -}}

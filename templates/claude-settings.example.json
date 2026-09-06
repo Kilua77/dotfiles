@@ -1,0 +1,103 @@
+// Reference for a user-scope Claude Code settings file: ~/.claude/settings.json
+// -----------------------------------------------------------------------------
+// NOTE ON COMMENTS: Claude Code settings files are STRICT JSON — a // comment
+// or trailing comma is a syntax error and Claude Code reports a Settings Error
+// at the next start. The comments below exist for reading inside this repo
+// only: copy the KEYS you need into your file, never the comments.
+//
+// Copy what you need into ~/.claude/settings.json. The public repo never
+// writes your real settings — see docs/ai-overlay.md: that file belongs to
+// your private chezmoi overlay. (This directory, templates/, is listed in
+// .chezmoiignore: nothing here is ever deployed.)
+//
+// Settings layers, most to least precedence for most keys:
+//   .claude/settings.local.json   (project, not committed)
+//   .claude/settings.json         (project, committed by the project)
+//   ~/.claude/settings.json       (user — this file)
+// Hooks are the exception: they MERGE across all layers instead of
+// overriding each other.
+{
+  // Editor support: JSON-schema validation and completion.
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+
+  // Which model Claude Code runs on: an alias or a full model name. Leave the
+  // key out entirely to use your account default. A personal choice — the
+  // private overlay's business, not the public repo's.
+  "model": "<model-id-of-your-choice>",
+
+  // Environment variables set for every Claude Code session and for every
+  // subprocess it starts — e.g. API base-URL variables when routing to an
+  // alternative provider. Shell-independent: takes effect regardless of the
+  // shell that launched Claude Code.
+  // NEVER put tokens or keys here: this file is synced by a repo. Secrets
+  // belong in the shell environment, exported from ~/.localrc.
+  "env": {},
+
+  // Tool permissions. Each rule is ToolName or ToolName(specifier):
+  //   Bash(git status:*)  → any command line starting with "git status"
+  //                         (":*" is a prefix match on what follows)
+  //   Bash(git status)    → only the exact command "git status"
+  //   Read(./.env)        → exactly that path; Read(./**/*.pem) is a glob
+  "permissions": {
+    // A C/C++ workflow: configure, build, test, search, read-only git.
+    "allow": [
+      "Bash(cmake:*)",
+      "Bash(ctest:*)",
+      "Bash(ninja:*)",
+      "Bash(clang-format:*)",
+      "Bash(rg:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ],
+    // Anything that touches the outside world asks first.
+    "ask": [
+      "Bash(git push:*)"
+    ],
+    // Never readable by the agent, regardless of other rules.
+    "deny": [
+      "Read(./.env)",
+      "Read(./**/*.pem)"
+    ]
+  },
+
+  // Hook registration — this block is what ACTIVATES ~/.claude/hooks/format-cpp.sh
+  // (installed to your home by this public repo; the activation is yours to
+  // make). "matcher": "Write|Edit" matches exactly those two tools. "timeout"
+  // is in seconds. Hook entries merge across settings layers: a project can
+  // add its own hooks but cannot selectively disable this one — the only
+  // per-project off switch is "disableAllHooks": true in
+  // .claude/settings.local.json, which disables every hook and the status
+  // line, so treat it as a blunt instrument.
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/format-cpp.sh",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  },
+
+  // Custom status line rendered at the bottom of the Claude Code UI. The
+  // command runs in a shell (so ~ expands) and receives session state as JSON
+  // on stdin; whatever it prints to stdout becomes the status line. The
+  // script itself (~/.claude/statusline.sh) is personal — private overlay.
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline.sh"
+  },
+
+  // Plugins bundle skills, agents, hooks, commands and MCP servers for easy
+  // distribution. Keys are "plugin-name@marketplace-name", values are
+  // booleans; /plugin or `claude plugin enable` maintain this map for you.
+  // Your personal selection stays in the private overlay.
+  "enabledPlugins": {
+    // "example-plugin@example-marketplace": true
+  }
+}

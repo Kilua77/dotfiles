@@ -1,0 +1,17 @@
+{{/* vim: set filetype=go: */}}
+{{/*
+  Files in the source directory that must NEVER be deployed to $HOME.
+  This file is itself a template, so entries can depend on .chezmoi.os, etc.
+  Inspect what is ignored with: `chezmoi ignored`
+*/}}
+
+# Repository meta — not dotfiles.
+README.md
+LICENSE
+docs
+.github
+Brewfile
+templates
+
+# Safety net: never deploy a local secrets file by accident (see dot_localrc.example).
+dot_localrc

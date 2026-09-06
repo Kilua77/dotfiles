@@ -1,0 +1,23 @@
+# ~/.localrc — local secrets and machine-specific values.
+#
+# Usage:
+#   cp ~/.localrc.example ~/.localrc
+#   chmod 600 ~/.localrc
+#   # then fill in real values below
+#
+# ~/.localrc is sourced by ~/.zshrc at startup and is never versioned:
+# .chezmoiignore blocks an accidental `dot_localrc` source entry as a
+# safety net, and this example file is the only trace kept in the repo.
+
+# Consumed by AI CLI tools launched from this shell.
+export CLAUDE_AUTH_TOKEN="xxx"
+export CLAUDE_BASE_URL="xxx"
+
+# User-scope MCP servers, registered by the private overlay repo's
+# run_onchange script. The public repo never reads these — variable NAMES
+# are a convention between ~/.localrc and the private overlay; this public
+# example deliberately shows generic placeholders. Real names (and values)
+# are documented in the private repo.
+#   export MCP_<SERVER>_URL="https://mcp.example.org/endpoint"
+
+# Anything else machine-specific (tokens, proxies, extra PATH entries).

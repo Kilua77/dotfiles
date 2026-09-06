@@ -1,0 +1,73 @@
+{{/* vim: set filetype=go: */}}
+# ~/.gitconfig — managed by chezmoi; edit the source, not this file.
+# Repo: Kilua77/dotfiles
+
+# Identity, from the `name`/`email` keys of the chezmoi config.
+[user]
+    name = {{ .name }}
+    email = {{ .email }}
+
+# Machine-local overrides (e.g. a work identity) live outside the repo.
+[include]
+    path = ~/.gitconfig.local
+
+# New repositories start on `main`.
+[init]
+    defaultBranch = main
+
+# Push the current branch only; create the upstream on first push.
+[push]
+    default = simple
+    autoSetupRemote = true
+
+# Pull with rebase to keep history linear.
+[pull]
+    rebase = true
+
+# Neovim as the message editor; global ignore file; delta as the pager.
+[core]
+    editor = nvim
+    excludesfile = ~/.gitignore
+    pager = delta
+
+# delta also drives interactive-stage diffs (e.g. `git add -p`).
+[interactive]
+    diffFilter = delta --color-only
+
+# delta: side-by-side diffs, n/n keys jump between hunks.
+[delta]
+    navigate = true
+    side-by-side = true
+
+# Show the base version in conflict markers for 3-way context.
+[merge]
+    conflictstyle = diff3
+
+# Color moved blocks in diffs.
+[diff]
+    colorMoved = default
+
+[color]
+    ui = auto
+
+[alias]
+    co = checkout
+    st = status -sb
+    ci = commit
+    # Committer leaderboard for the current history.
+    count = shortlog -sn
+    # Undo the last commit, keeping its changes staged.
+    undo = reset --soft HEAD^
+    # Add to the last commit without reopening the editor.
+    amend = commit --amend --no-edit
+    # Rebase on the upstream, stashing local changes first.
+    up = pull --rebase --autostash
+    # Commits on this branch not yet pushed upstream.
+    unpushed = log @{u}..
+    # Push the current branch and set its upstream in one go.
+    promote = push -u origin HEAD
+    # Delete a remote branch by name.
+    nuke = push origin --delete
+    # Remove every local branch already merged into the current one
+    # (never the current or main branch).
+    delete-local-merged = !git branch --merged | grep -vE '^\*|main' | xargs -r git branch -d

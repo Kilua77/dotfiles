@@ -1,0 +1,11 @@
+{{/* vim: set filetype=go: */}}
+# ~/.zprofile — login shells only.
+# Homebrew on Apple Silicon lives in /opt/homebrew, outside the default
+# PATH, so its shellenv must run before the interactive setup in ~/.zshrc.
+
+{{ if eq .chezmoi.os "darwin" -}}
+# Load Homebrew into the environment (PATH, MANPATH, INFOPATH).
+if [ -x /opt/homebrew/bin/brew ]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+fi
+{{- end }}

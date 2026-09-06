@@ -1,0 +1,30 @@
+{{/* vim: set filetype=go: */}}
+{{/*
+  chezmoi configuration template — rendered once to ~/.config/chezmoi/chezmoi.toml
+  on the first `chezmoi init`.
+
+  Answers given here are stored in the config file and never asked again.
+  To change a value later: edit ~/.config/chezmoi/chezmoi.toml directly.
+
+  Design notes:
+  - The only first-class distinction is the OS (darwin/linux), which chezmoi
+    detects natively via .chezmoi.os — nothing to configure here.
+  - `compiler` controls the CC/CXX exports in ~/.zshrc.
+    "none" leaves the system defaults untouched.
+  - Feature flags (vcpkg, vscode_extensions) can be flipped by hand in
+    ~/.config/chezmoi/chezmoi.toml; see docs/MAINTENANCE.md.
+*/}}
+{{- $name := promptStringOnce . "name" "Git user.name" -}}
+{{- $email := promptStringOnce . "email" "Git user.email" -}}
+{{- $defaultCompiler := "none" -}}
+{{- if eq .chezmoi.os "darwin" }}{{ $defaultCompiler = "gcc" }}{{ end -}}
+{{- $compiler := promptChoiceOnce . "compiler" "Default C/C++ compiler (gcc/clang/none)" (list "gcc" "clang" "none") $defaultCompiler -}}
+
+[data]
+    name = {{ $name | quote }}
+    email = {{ $email | quote }}
+    compiler = {{ $compiler | quote }}
+
+    # Feature flags — edit in ~/.config/chezmoi/chezmoi.toml, then `chezmoi apply`.
+    vcpkg = true
+    vscode_extensions = true

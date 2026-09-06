@@ -1,0 +1,9 @@
+# gf <branch> — checkout a local branch tracking origin/<branch>.
+# Loaded on first call via `autoload -Uz gf` (see ~/.zshrc, section 9).
+
+if [[ -z "$1" ]]; then
+    echo "usage: gf <branch>" >&2
+    return 1
+fi
+
+git checkout -b "$1" "origin/$1"

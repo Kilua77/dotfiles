@@ -1,0 +1,55 @@
+#!/bin/sh
+# Purpose:  Create ~/.gitconfig.local (machine-local git overrides, included
+#           from ~/.gitconfig) on the first apply, without ever clobbering an
+#           existing one.
+# When it runs: run_once_after -- at most once per machine, AFTER chezmoi has
+#           deployed the dotfiles.
+# How to re-trigger: `chezmoi state delete-bucket --bucket=scriptState && chezmoi
+#           apply` re-enables all run_once scripts; the -f guard below keeps any
+#           existing file safe regardless. In practice you never need to re-run
+#           this -- edit ~/.gitconfig.local directly.
+
+set -eu
+
+if [ -f "$HOME/.gitconfig.local" ]; then
+    echo "gitconfig.local: already present, leaving untouched"
+    exit 0
+fi
+
+# The heredoc delimiter is quoted ('EOF') so the shell expands nothing; all
+# variability comes from the chezmoi template rendering the block below.
+cat > "$HOME/.gitconfig.local" <<'EOF'
+# ~/.gitconfig.local -- machine-local git overrides.
+# Included from ~/.gitconfig; owned by you, never overwritten by chezmoi
+# (created once on first apply, then left alone). Edit freely.
+
+# Example: use a different (work) identity on this machine only.
+# [user]
+#     name = Work Name
+#     email = work@example.com
+
+# Example: machine-specific tweaks.
+# [core]
+#     editor = vim
+
+[credential]
+{{ if eq .chezmoi.os "darwin" -}}
+    # macOS: store credentials in the login keychain.
+    helper = osxkeychain
+{{ else -}}
+    # Linux baseline: in-memory cache for one hour (no daemon, no keyring).
+    helper = cache
+    # Better on desktop Linux: libsecret (GNOME Keyring / KWallet).
+    # Enable with:
+    #   sudo apt-get install libsecret-1-0 libsecret-1-dev
+    #   sudo make -C /usr/share/doc/git/contrib/credential/libsecret
+    # then replace "helper = cache" with:
+    #   helper = /usr/share/doc/git/contrib/credential/libsecret/git-credential-libsecret
+{{ end -}}
+EOF
+
+# Not strictly required (no secrets live here), but a tight default is free.
+chmod 600 "$HOME/.gitconfig.local"
+echo "gitconfig.local: created $HOME/.gitconfig.local"
+
+exit 0
