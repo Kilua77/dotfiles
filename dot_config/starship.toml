@@ -1,0 +1,24 @@
+# ~/.config/starship.toml — minimal, fast prompt.
+# Docs: https://starship.rs/config/
+# House rule: add modules deliberately — each one costs startup time.
+# Language/runtimes (C++, cmake, python...) show up automatically per
+# directory; nothing to enable here.
+
+add_newline = true
+
+[directory]
+truncation_length = 4
+style = "bold cyan"
+
+[git_branch]
+style = "bold purple"
+
+[git_status]
+style = "bold yellow"
+
+[cmd_duration]
+min_time = 2000          # only show when a command took longer than 2s
+
+[character]
+success_symbol = "[➜](bold green)"
+error_symbol = "[➜](bold red)"

@@ -1,0 +1,6 @@
+#compdef c
+# Completion for the `c` project-jump function: offer directories under
+# $PROJECTS (default ~/Workspace), one level deep. Discovered automatically
+# by compinit thanks to the #compdef line above.
+
+_files -W "${PROJECTS:-$HOME/Workspace}" -/

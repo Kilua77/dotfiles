@@ -1,0 +1,80 @@
+---
+# ============================================================================
+# House clang-tidy configuration — deployed to ~/.clang-tidy.
+#
+# clang-tidy looks for a .clang-tidy next to each translation unit and then
+# in each parent directory, using the closest one it finds. Since checkouts
+# normally live under $HOME, this file is the house fallback for any project
+# without its own .clang-tidy; a project-local file always shadows it.
+#
+# Philosophy: pragmatic modern checks with a high signal-to-noise ratio.
+# Start from silence, opt in to trusted module families, then disable the
+# individual checks that fire on reasonable code. Zero-warning doctrine is
+# enforced at build level (-Werror), not by promoting every tidy finding to
+# an error.
+# ============================================================================
+
+# -*, then trusted families, then opt-outs for the noisy members.
+Checks: >
+  -*,
+  bugprone-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  clang-analyzer-*,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-prefer-member-initializer,
+  misc-unused-parameters,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -bugprone-easily-swappable-parameters
+
+# Why these families:
+#   bugprone-*, performance-*, clang-analyzer-* — genuine defect finders
+#     (logic errors, accidental copies, static-analysis findings) worth
+#     keeping wholesale.
+#   modernize-*, readability-* — push the code toward current C++ and a
+#     uniform reading style; the loud members are turned off below.
+#   cppcoreguidelines-init-variables (flag uninitialized locals) and
+#     cppcoreguidelines-prefer-member-initializer — the two cheap, high-
+#     value Core Guidelines checks, without pulling in the very noisy
+#     cppcoreguidelines-*/cert-* families wholesale.
+#   misc-unused-parameters — dead-parameter hygiene, mainly for interfaces.
+#
+# Why these opt-outs (re-enable per project if wanted):
+#   -modernize-use-trailing-return-type — rewriting every "int f()" into
+#     "auto f() -> int" is pure churn on ordinary functions.
+#   -readability-identifier-length — flags i/j/n in loops and math, where
+#     short names are idiomatic.
+#   -readability-magic-numbers — tests and math code are full of literal
+#     constants by design.
+#   -bugprone-easily-swappable-parameters — flags nearly every adjacent
+#     same-type pair; fixing it is an API design decision, not a lint fix.
+
+# Promote nothing to error here: findings stay visible but never block a
+# developer's run. What fails CI is decided per project (typically the
+# -Werror build, plus a clean-room clang-tidy run) — not by this file.
+WarningsAsErrors: ''
+
+# When fixing (--fix, --fix-errors), apply the project's .clang-format
+# (resolved with the same upward lookup as this file) to the fix-its, so
+# lint fixes and the formatter never fight each other.
+FormatStyle: file
+
+# Diagnostics are reported for headers whose full path matches this regex
+# (the main file of each translation unit is always checked). '.*' means:
+# analyze every header that reaches the filter, i.e. the project's own
+# headers — the filter's whole purpose is to keep findings in your code.
+HeaderFilterRegex: '.*'
+
+# ... minus vendored code: headers under any third_party/ directory are
+# excluded from analysis. Requires clang-tidy >= 19 (which added
+# ExcludeHeaderFilterRegex); on older versions delete this line.
+#
+# NOTE: the intuitive one-liner
+#   HeaderFilterRegex: '^(?!.*[/\\]third_party[/\\]).*'
+# does NOT work anywhere: clang-tidy matches with POSIX extended regular
+# expressions, which have no lookahead — that pattern is a hard "invalid
+# regular expression" error. The two lines above are the supported way.
+ExcludeHeaderFilterRegex: '.*[/\\]third_party[/\\].*'

@@ -1,0 +1,95 @@
+{{ if ne .chezmoi.os "linux" -}}
+#!/bin/sh
+# Non-Linux: on macOS Neovim comes from Homebrew (see the Brewfile), so this
+# renders as shebang + exit 0 -- chezmoi still sees a valid script and its
+# content hash stays stable.
+exit 0
+{{ else -}}
+#!/bin/sh
+# Purpose:  Install an official, pinned Neovim build on Linux. Distro packages
+#           are usually too old for LazyVim (Neovim >= 0.10 is required), so we
+#           install the upstream tarball pinned in .chezmoidata/versions.yaml.
+# When it runs: run_onchange_after -- whenever the rendered content of this
+#           script changes, i.e. when the neovim_linux pin is bumped.
+# How to re-trigger: bump versions.neovim_linux in .chezmoidata/versions.yaml,
+#           then `chezmoi apply`. NOTE the skip rule below: an existing nvim
+#           >= 0.10 is left alone even after a pin bump; to force an upgrade,
+#           remove ~/.local/opt/nvim-* and ~/.local/bin/nvim first, then apply.
+# Failure policy: download/extract failures WARN and exit 0.
+
+set -u
+
+# Version pinned in .chezmoidata/versions.yaml -- single source of truth.
+nvim_tag="{{ .versions.neovim_linux }}"
+nvim_ver="{{ .versions.neovim_linux | trimPrefix "v" }}"
+
+# --- Architecture (official tarballs are published per-arch) ----------------
+
+case "$(uname -m)" in
+    x86_64) arch="x86_64" ;;
+    aarch64 | arm64) arch="arm64" ;;
+    *)
+        echo "WARN: unsupported architecture $(uname -m), skipping Neovim install"
+        exit 0
+        ;;
+esac
+
+# --- Skip if the existing Neovim is new enough -------------------------------
+
+if command -v nvim >/dev/null 2>&1; then
+    # First line looks like: NVIM v0.9.5
+    ver_line="$(nvim --version | head -1)"
+    ver="${ver_line#*v}"      # 0.9.5
+    major="${ver%%.*}"        # 0
+    minor="${ver#*.}"         # 9.5 -> 9 after the next strip
+    minor="${minor%%.*}"
+    if [ "${major:-0}" -gt 0 ] || [ "${minor:-0}" -ge 10 ]; then
+        echo "neovim: existing ${major:-0}.${minor:-0} is >= 0.10, keeping it"
+        exit 0
+    fi
+    echo "neovim: existing ${major:-0}.${minor:-0} is older than 0.10, installing pinned ${nvim_ver}"
+fi
+
+# --- Download and install ----------------------------------------------------
+
+command -v curl >/dev/null 2>&1 || {
+    echo "WARN: curl missing, skipping Neovim install"
+    exit 0
+}
+
+url="https://github.com/neovim/neovim/releases/download/${nvim_tag}/nvim-${nvim_ver}-linux-${arch}.tar.gz"
+dest="$HOME/.local/opt/nvim-${nvim_ver}"
+tmp="$(mktemp -d)" || {
+    echo "WARN: mktemp failed, skipping Neovim install"
+    exit 0
+}
+
+echo "neovim: downloading ${url}"
+if ! curl -fL "$url" -o "$tmp/nvim.tar.gz"; then
+    echo "WARN: download failed, skipping Neovim install"
+    rm -rf "$tmp"
+    exit 0
+fi
+
+if ! tar -xzf "$tmp/nvim.tar.gz" -C "$tmp"; then
+    echo "WARN: extraction failed, skipping Neovim install"
+    rm -rf "$tmp"
+    exit 0
+fi
+
+# The tarball extracts to nvim-linux-<arch>/; move it to a versioned directory
+# so successive pins can coexist, then (re)point a stable symlink at it.
+rm -rf "$dest"
+mkdir -p "$HOME/.local/opt" "$HOME/.local/bin"
+if mv "$tmp"/nvim-linux-* "$dest"; then
+    ln -sfn "$dest/bin/nvim" "$HOME/.local/bin/nvim"
+    echo "neovim: installed ${nvim_ver} -> ${dest}"
+    echo "neovim: symlinked ~/.local/bin/nvim (make sure ~/.local/bin is on PATH)"
+else
+    echo "WARN: install step failed, skipping Neovim install"
+    rm -rf "$dest"
+fi
+
+rm -rf "$tmp"
+exit 0
+{{ end -}}

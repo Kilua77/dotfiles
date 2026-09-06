@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+#
+# format-cpp.sh — Claude Code PostToolUse hook: format C/C++ files after Write/Edit.
+#
+# Purpose:
+#   Run `clang-format -i` on every C/C++ file Claude Code has just written or
+#   edited, so generated code immediately matches the project's .clang-format
+#   style without any manual step.
+#
+# When it runs:
+#   Registered under "hooks" > "PostToolUse" in Claude Code settings with the
+#   matcher "Write|Edit". Claude Code calls this script once per tool call,
+#   passing the tool event as a JSON object on stdin; the touched file is at
+#   .tool_input.file_path. Events for any other tool never match the matcher
+#   and never reach this script.
+#
+# How to make it active:
+#   This repo installs the script at ~/.claude/hooks/format-cpp.sh but does
+#   NOT activate it (the public repo never writes your real Claude Code
+#   settings). Copy the "hooks" block from templates/claude-settings.example.json
+#   into ~/.claude/settings.json — that file belongs to your private overlay;
+#   see docs/ai-overlay.md in this repo.
+#
+# Opting out per project:
+#   Registration itself is opt-in: only the private overlay can write this
+#   hook into ~/.claude/settings.json. Hook entries MERGE across settings
+#   layers (user, project, local) — a project can add hooks but cannot
+#   selectively disable this one; the only per-project switch is
+#   "disableAllHooks": true in .claude/settings.local.json, which kills every
+#   hook and the status line. Outside C/C++ work the script below is inert
+#   anyway: the extension guard exits before clang-format is ever run.
+#
+# Design rule:
+#   A formatting hook must never block the agent. This script is best-effort:
+#   missing JSON parser, non-C/C++ file, missing clang-format, or a formatting
+#   error all lead to a silent exit 0.
+
+set -u
+
+INPUT="$(cat)"
+
+# --- Extract .tool_input.file_path from the event JSON ---------------------
+# jq is the fast path; python3 is the fallback. With neither parser available
+# there is nothing safe this hook can do, so it stays silent.
+if command -v jq >/dev/null 2>&1; then
+    FILE="$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty')"
+elif command -v python3 >/dev/null 2>&1; then
+    FILE="$(printf '%s' "$INPUT" | python3 -c '
+import json, sys
+try:
+    event = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+tool_input = event.get("tool_input") or {}
+sys.stdout.write(tool_input.get("file_path") or "")
+')"
+else
+    exit 0
+fi
+
+# Normalise Windows-style backslashes so the extension check and the
+# clang-format call see a POSIX-style path.
+FILE="${FILE//\\//}"
+
+[ -n "$FILE" ] || exit 0
+
+# --- Extension guard: only C/C++ sources and headers ------------------------
+# *.cpp *.cc *.cxx *.c *.h *.hpp *.hh *.inl. ${FILE##*.} keeps only the
+# extension; nocasematch makes the test case-insensitive so .CPP / .H count
+# too. Pure bash on purpose (works with the bash 3.2 shipped on macOS, and
+# needs nothing from PATH).
+shopt -s nocasematch
+case "${FILE##*.}" in
+    cpp|cc|cxx|c|h|hpp|hh|inl) ;;
+    *) exit 0 ;;
+esac
+
+# --- Format ------------------------------------------------------------------
+# No-op when clang-format is not installed on this machine.
+command -v clang-format >/dev/null 2>&1 || exit 0
+
+clang-format -i "$FILE"
+
+# Always succeed: a formatting hook must never block the agent.
+exit 0

@@ -1,0 +1,133 @@
+{{ if ne .chezmoi.os "linux" -}}
+#!/bin/sh
+# Non-Linux: apt packages are Linux-only (macOS uses Homebrew; see
+# run_onchange_after_10-brew-bundle.sh.tmpl). Rendered as shebang + exit 0 so
+# chezmoi still sees a valid script whose content hash stays stable.
+exit 0
+{{ else -}}
+#!/usr/bin/env bash
+# Purpose:  Install the Linux (apt) packages these dotfiles rely on.
+#           apt is the tested baseline; the guard below makes this a silent
+#           no-op on non-apt distros (Fedora, Arch, ...) instead of an error.
+# When it runs: run_onchange_after -- whenever the rendered content of this
+#           script changes, i.e. whenever a package list below is edited.
+# How to re-trigger: edit a list, then `chezmoi apply`. Nuclear option:
+#           `chezmoi state delete-bucket --bucket=scriptState && chezmoi apply`.
+# Failure policy: individual package failures WARN and continue -- one package
+#           missing on a derivative distro must never abort the apply.
+
+set -u -o pipefail
+
+# --- Guards -----------------------------------------------------------------
+
+# No apt -> not a supported distro for this script; exit silently.
+command -v apt-get >/dev/null 2>&1 || exit 0
+
+# Elevation: prefer sudo; run without it when we already are root
+# ("passwordless root"). `sudo -n true` is not a reliable am-I-root probe on
+# every system, so the uid check is used instead. With SUDO="" the quoted
+# "$SUDO" expands to nothing and the command runs directly.
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
+else
+    SUDO="sudo"
+fi
+
+# --- Package index ----------------------------------------------------------
+
+"$SUDO" apt-get update -qq \
+    || echo "WARN: apt-get update failed, continuing with the cached index"
+
+# --- Package lists ----------------------------------------------------------
+
+# Core shell/CLI tooling used by the dotfiles themselves.
+common=(
+    zsh
+    git
+    tmux
+    curl
+    unzip
+    jq
+    ripgrep
+    fzf
+    python3
+    python3-pip
+    python3-venv
+    build-essential
+    pkg-config
+)
+
+# Extra C/C++ and general dev tooling.
+dev=(
+    cmake
+    ninja-build
+    ccache
+    clang-format
+    clang-tidy
+    clangd
+    git-delta
+    eza
+    bat
+    fd-find
+    nodejs
+    npm
+)
+
+# One apt-get invocation per package (not one big install): a package missing
+# from the distro must not abort the remaining installs.
+for p in "${common[@]}" "${dev[@]}"; do
+    if "$SUDO" apt-get install -y "$p" >/dev/null 2>&1; then
+        echo "apt: $p ok"
+    else
+        echo "WARN: $p not installed"
+    fi
+done
+
+# --- uv (Python toolchain manager) ------------------------------------------
+
+if command -v uv >/dev/null 2>&1; then
+    echo "uv: already installed"
+elif command -v curl >/dev/null 2>&1; then
+    echo "uv: running the official installer"
+    # pipefail (set above) makes a failed download surface as failure here.
+    if curl -LsSf https://astral.sh/uv/install.sh | sh; then
+        echo "uv: installed (open a new shell, or reload ~/.zshrc)"
+    else
+        echo "WARN: uv installer failed -- see https://docs.astral.sh/uv/"
+    fi
+else
+    echo "WARN: curl missing, skipping uv install"
+fi
+
+# --- Debian-isms -------------------------------------------------------------
+# Debian often ships only versioned binaries (clangd-17, clang-format-17, ...).
+# When the unversioned name is missing, register it via update-alternatives.
+# /usr/local/bin is used as the master link so we never fight Debian's own
+# alternatives under /usr/bin (and /usr/local/bin wins in the default PATH).
+# Entirely best effort: failures are ignored.
+
+register_alt() {
+    local name="$1" candidate="$2"
+    "$SUDO" update-alternatives --install "/usr/local/bin/$name" "$name" "$candidate" 100 || true
+}
+
+if ! command -v clangd >/dev/null 2>&1; then
+    for v in 19 18 17; do
+        if command -v "clangd-$v" >/dev/null 2>&1; then
+            register_alt clangd "$(command -v "clangd-$v")"
+            break
+        fi
+    done
+fi
+
+if ! command -v clang-format >/dev/null 2>&1; then
+    for v in 19 18 17; do
+        if command -v "clang-format-$v" >/dev/null 2>&1; then
+            register_alt clang-format "$(command -v "clang-format-$v")"
+            break
+        fi
+    done
+fi
+
+exit 0
+{{ end -}}

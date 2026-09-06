@@ -1,0 +1,51 @@
+{{ if not .vcpkg -}}
+#!/bin/sh
+# vcpkg is false in ~/.config/chezmoi/chezmoi.toml -- rendering as
+# shebang + exit 0 keeps this a valid script whose content hash stays stable.
+exit 0
+{{ else -}}
+#!/bin/sh
+# Purpose:  Clone vcpkg (C++ dependency manager) into ~/vcpkg and run its
+#           bootstrap once. Optional convenience, gated by the `vcpkg` feature
+#           flag.
+# When it runs: run_onchange_after -- whenever the rendered content changes,
+#           typically when the vcpkg flag is flipped in the chezmoi config.
+# How to re-trigger: flip `vcpkg` in ~/.config/chezmoi/chezmoi.toml, then
+#           `chezmoi apply`. An existing ~/vcpkg short-circuits the script, so
+#           re-runs are cheap.
+# Failure policy: every step WARNs and exits 0; this must never break an apply.
+
+set -u
+
+if [ -d "$HOME/vcpkg" ]; then
+    echo "vcpkg: ~/vcpkg already present, bootstrap skipped"
+    exit 0
+fi
+
+command -v git >/dev/null 2>&1 || {
+    echo "WARN: git not found, skipping vcpkg bootstrap"
+    exit 0
+}
+command -v curl >/dev/null 2>&1 || {
+    echo "WARN: curl not found (bootstrap downloads the vcpkg binary), skipping"
+    exit 0
+}
+
+echo "vcpkg: shallow-cloning to ~/vcpkg"
+if ! git clone --depth 1 https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"; then
+    echo "WARN: vcpkg clone failed -- see https://github.com/microsoft/vcpkg"
+    exit 0
+fi
+
+# bootstrap-vcpkg.sh takes the same arguments on Linux and macOS.
+echo "vcpkg: running bootstrap (downloads the prebuilt vcpkg binary)"
+if ! (cd "$HOME/vcpkg" && ./bootstrap-vcpkg.sh -disableMetrics); then
+    echo "WARN: vcpkg bootstrap failed -- run ~/vcpkg/bootstrap-vcpkg.sh by hand"
+    exit 0
+fi
+
+echo "vcpkg: ready. Export VCPKG_ROOT=\"$HOME/vcpkg\" for toolchains, e.g.:"
+echo "vcpkg:   cmake -B build -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake"
+
+exit 0
+{{ end -}}

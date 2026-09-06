@@ -1,0 +1,149 @@
+# lint -- three cheap gates for every push and pull request:
+#   1. gitleaks        : scan full history for leaked secrets
+#   2. shellcheck      : render the chezmoi scripts, then shellcheck them
+#   3. template-render : render every *.tmpl to catch Go-template syntax errors
+#
+# The dummy-config trick (shellcheck + template-render jobs):
+# Templates read data keys such as .name, .email and .compiler, and
+# .chezmoi.toml.tmpl would normally PROMPT for them on first init. A prompt in
+# CI hangs forever, so each job writes a throwaway ~/.config/chezmoi/chezmoi.toml
+# with the [data] values pre-filled. promptStringOnce/promptChoiceOnce only
+# prompt when the key is missing, so pre-filling makes rendering fully
+# non-interactive. Version pins are NOT faked: they come from .chezmoidata/ in
+# the repo itself, which is why every chezmoi call passes `--source .`.
+
+name: lint
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # scan full history, not just the latest commit
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+
+      - name: Install chezmoi
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sfL https://chezmoi.io/get | bash -s -- -b "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Dummy config -- see the comment at the top of this file.
+      - name: Write dummy chezmoi config
+        run: |
+          mkdir -p "$HOME/.config/chezmoi"
+          cat > "$HOME/.config/chezmoi/chezmoi.toml" <<'EOF'
+          [data]
+          name = "ci"
+          email = "ci@example.invalid"
+          compiler = "gcc"
+          vcpkg = false
+          vscode_extensions = false
+          EOF
+
+      - name: Render scripts and shellcheck them
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p /tmp/rendered
+          # .chezmoiscripts/*.tmpl: render (resolves {{ ... }} and OS branches),
+          # then shellcheck the plain-shell result.
+          for f in .chezmoiscripts/*.tmpl; do
+            out="/tmp/rendered/$(basename "${f%.tmpl}")"
+            chezmoi --source . execute-template < "$f" > "$out"
+            shellcheck "$out"
+          done
+          # bin/ helper scripts: render *.tmpl; raw scripts are checked as-is.
+          for f in bin/*; do
+            case "$f" in
+              *.tmpl)
+                out="/tmp/rendered/bin-$(basename "${f%.tmpl}")"
+                chezmoi --source . execute-template < "$f" > "$out"
+                shellcheck "$out"
+                ;;
+              *)
+                shellcheck "$f"
+                ;;
+            esac
+          done
+
+      # Known gap: with the flags-false dummy config, and on a linux runner,
+      # the vscode/vcpkg script bodies and the darwin branch of the brew script
+      # render as early-exits. Re-render the two flag-gated scripts with the
+      # flags ON so their real bodies are shellchecked too. (.chezmoi.os is set
+      # by chezmoi from the runner and cannot be overridden, so the darwin-only
+      # body of the brew script stays unexercised here -- it runs on real
+      # macOS applies.)
+      - name: Shellcheck flag-gated script bodies
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/rendered-true
+          cat > "$HOME/.config/chezmoi/chezmoi.toml" <<'EOF'
+          [data]
+          name = "ci"
+          email = "ci@example.invalid"
+          compiler = "gcc"
+          vcpkg = true
+          vscode_extensions = true
+          EOF
+          for f in \
+            .chezmoiscripts/run_onchange_after_20-vscode-extensions.sh.tmpl \
+            .chezmoiscripts/run_onchange_after_40-vcpkg-bootstrap.sh.tmpl
+          do
+            out="/tmp/rendered-true/$(basename "${f%.tmpl}")"
+            chezmoi --source . execute-template < "$f" > "$out"
+            shellcheck "$out"
+          done
+
+  template-render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install chezmoi
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sfL https://chezmoi.io/get | bash -s -- -b "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Dummy config -- same trick as the shellcheck job.
+      - name: Write dummy chezmoi config
+        run: |
+          mkdir -p "$HOME/.config/chezmoi"
+          cat > "$HOME/.config/chezmoi/chezmoi.toml" <<'EOF'
+          [data]
+          name = "ci"
+          email = "ci@example.invalid"
+          compiler = "gcc"
+          vcpkg = false
+          vscode_extensions = false
+          EOF
+
+      - name: Render every template
+        run: |
+          set -euo pipefail
+          # Render every *.tmpl in the repo to /dev/null: catches Go-template
+          # syntax errors in ANY template, not just the scripts.
+          while IFS= read -r -d '' f; do
+            echo "render: $f"
+            chezmoi --source . execute-template < "$f" > /dev/null
+          done < <(find . -name '*.tmpl' -not -path './.git/*' -print0 | sort -z)

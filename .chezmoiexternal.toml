@@ -1,0 +1,28 @@
+{{/* vim: set filetype=go: */}}
+{{/*
+  External dependencies pulled as pinned tarballs (no plugin manager).
+  Versions live in .chezmoidata/versions.yaml — bump them there.
+  Archives are re-downloaded when the URL changes (i.e. on version bump)
+  or after refreshPeriod, whichever comes first.
+*/}}
+
+[".local/share/zsh/plugins/zsh-autosuggestions"]
+    type = "archive"
+    url = "https://github.com/zsh-users/zsh-autosuggestions/archive/refs/tags/{{ .versions.zsh_autosuggestions }}.tar.gz"
+    exact = true
+    stripComponents = 1
+    refreshPeriod = "168h"
+
+[".local/share/zsh/plugins/zsh-syntax-highlighting"]
+    type = "archive"
+    url = "https://github.com/zsh-users/zsh-syntax-highlighting/archive/refs/tags/{{ .versions.zsh_syntax_highlighting }}.tar.gz"
+    exact = true
+    stripComponents = 1
+    refreshPeriod = "168h"
+
+[".local/share/zsh/plugins/zsh-history-substring-search"]
+    type = "archive"
+    url = "https://github.com/zsh-users/zsh-history-substring-search/archive/{{ .versions.zsh_history_substring_search }}.tar.gz"
+    exact = true
+    stripComponents = 1
+    refreshPeriod = "168h"

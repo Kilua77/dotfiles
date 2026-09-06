@@ -1,0 +1,193 @@
+{{/* vim: set filetype=go: */}}
+# ~/.zshrc — interactive zsh setup.
+# Managed by chezmoi — edit the source, not this file. Repo: Kilua77/dotfiles
+#
+# Sections:
+#   1. Secrets        6. Modern tools
+#   2. History        7. Environment
+#   3. Completion     8. Aliases
+#   4. Key bindings   9. Functions
+#   5. Plugins       10. OS specifics
+
+# --- 1. Secrets ----------------------------------------------------------
+# Local secrets and machine-specific values, never versioned.
+# See ~/.localrc.example for the documented template.
+[ -f "$HOME/.localrc" ] && source "$HOME/.localrc"
+
+# --- 2. History ------------------------------------------------------------
+HISTFILE="${XDG_STATE_HOME:-$HOME/.local/state}/zsh/history"
+mkdir -p "${HISTFILE:h}"  # :h is the zsh dirname modifier
+
+HISTSIZE=50000  # lines kept in memory per session
+SAVEHIST=50000  # lines persisted to $HISTFILE
+
+# Share one history file across running shells; record timestamps.
+setopt SHARE_HISTORY EXTENDED_HISTORY
+# Drop duplicates and superfluous blanks; confirm history expansion before run.
+setopt HIST_IGNORE_ALL_DUPS HIST_REDUCE_BLANKS HIST_VERIFY
+# Spell-check commands; complete inside the word under the cursor.
+setopt CORRECT COMPLETE_IN_WORD
+# Keep options and traps function-local while a function runs.
+setopt LOCAL_OPTIONS LOCAL_TRAPS
+# Background jobs keep running (and their speed) after logout.
+setopt NO_BG_NICE NO_HUP
+# Allow '# comments' on the interactive command line.
+setopt INTERACTIVE_COMMENTS
+
+# --- 3. Completion ---------------------------------------------------------
+# Custom autoloadable functions (and their completion widgets) live here.
+fpath=("$HOME/.config/zsh/functions" $fpath)
+autoload -Uz compinit && compinit
+
+# Case-insensitive matching: lowercase input matches any-case candidate.
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'
+# While unprocessed input is pending (e.g. pasted text), insert TAB
+# literally instead of triggering completion.
+zstyle ':completion:*' insert-tab pending
+
+# --- 4. Key bindings -------------------------------------------------------
+# Force the emacs keymap: EDITOR contains "vi" (nvim), which would
+# otherwise make zsh start in vi insert mode.
+bindkey -e
+
+# Home / End — common xterm sequences plus the plain \e[H / \e[F
+# variants sent by darwin terminal emulators.
+bindkey '\e[1~' beginning-of-line
+bindkey '\e[4~' end-of-line
+bindkey '\e[H'  beginning-of-line
+bindkey '\e[F'  end-of-line
+# Delete deletes forward.
+bindkey '\e[3~' delete-char
+# Ctrl+Left / Ctrl+Right move by word.
+bindkey '\e[1;5D' backward-word
+bindkey '\e[1;5C' forward-word
+
+# --- 5. Plugins ------------------------------------------------------------
+# Installed by .chezmoiexternal.toml as pinned archives under
+# ~/.local/share/zsh/plugins/. Each source is guarded so a missing plugin
+# never breaks the shell. Order matters: syntax-highlighting must load
+# after autosuggestions, and history-substring-search must load last
+# (it wraps widgets created by the others).
+ZSH_PLUGINS="$HOME/.local/share/zsh/plugins"
+
+if [ -f "$ZSH_PLUGINS/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
+    source "$ZSH_PLUGINS/zsh-autosuggestions/zsh-autosuggestions.zsh"
+    # Color the inline suggestion (fg=9 = bright red).
+    export ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=9'
+fi
+
+if [ -f "$ZSH_PLUGINS/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]; then
+    source "$ZSH_PLUGINS/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+fi
+
+if [ -f "$ZSH_PLUGINS/zsh-history-substring-search/zsh-history-substring-search.zsh" ]; then
+    source "$ZSH_PLUGINS/zsh-history-substring-search/zsh-history-substring-search.zsh"
+    # Up/Down (both terminal and application cursor key sequences)
+    # search history for anything matching the typed prefix.
+    bindkey '^[[A' history-substring-search-up
+    bindkey '^[[B' history-substring-search-down
+    bindkey '^[OA' history-substring-search-up
+    bindkey '^[OB' history-substring-search-down
+fi
+
+# Vendored directly in this repo (no download needed).
+if [ -f "$HOME/.config/zsh/plugins/colored-man-pages.plugin.zsh" ]; then
+    source "$HOME/.config/zsh/plugins/colored-man-pages.plugin.zsh"
+fi
+
+unset ZSH_PLUGINS
+
+# --- 6. Modern tools ---------------------------------------------------------
+# Prompt.
+command -v starship >/dev/null 2>&1 && eval "$(starship init zsh)"
+# Smarter cd with frecency tracking.
+command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init zsh)"
+
+if command -v fzf >/dev/null 2>&1; then
+    # Probe first: `fzf --zsh` exists only on fzf >= 0.48; on older builds
+    # it fails and prints nothing (hence 2>/dev/null on both calls).
+    if fzf --zsh >/dev/null 2>&1; then
+        source <(fzf --zsh 2>/dev/null)
+    elif [ -f /usr/share/doc/fzf/examples/key-bindings.zsh ]; then
+        # Older fzf as packaged by Debian: use the distro-shipped bindings.
+        source /usr/share/doc/fzf/examples/key-bindings.zsh
+    fi
+fi
+
+# --- 7. Environment -----------------------------------------------------------
+export EDITOR=nvim
+export VISUAL=nvim
+
+# Root directory for personal projects — used by the `c` jump function
+# (section 9) and its completion.
+export PROJECTS="$HOME/Workspace"
+
+# Fallback locale for hosts that ship none.
+export LANG="${LANG:-en_US.UTF-8}"
+
+# C/C++ compiler preference, from the `compiler` key of the chezmoi config.
+# "none" leaves the system defaults untouched.
+{{ if eq .compiler "gcc" }}export CC=gcc CXX=g++
+{{ else if eq .compiler "clang" }}export CC=clang CXX=clang++
+{{ end }}
+
+# nvm takes ~1s to source; load it on first use instead of at startup.
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+    nvm() {
+        unset -f nvm              # drop this stub...
+        source "$NVM_DIR/nvm.sh"  # ...load the real nvm once...
+        nvm "$@"                  # ...and replay the original arguments.
+    }
+fi
+
+# --- 8. Aliases ----------------------------------------------------------------
+# Reload this file after an edit.
+alias reload!='. ~/.zshrc'
+alias cls='clear'
+
+# Prefer the Neovim binary over vi(m) when it is installed.
+command -v nvim >/dev/null 2>&1 && alias vim='nvim'
+
+# eza replaces ls when available (dirs grouped first), with ll/la/lt variants.
+if command -v eza >/dev/null 2>&1; then
+    alias ls='eza --group-directories-first'
+    alias ll='eza -lah --group-directories-first'
+    alias la='eza -a --group-directories-first'
+    alias lt='eza --tree --group-directories-first'
+else
+    # No eza: keep at least a usable long listing.
+    alias ll='ls -lah'
+fi
+
+# cat -> bat (packaged as batcat on Debian/Ubuntu).
+if command -v bat >/dev/null 2>&1; then
+    alias cat='bat --paging=never'
+elif command -v batcat >/dev/null 2>&1; then
+    alias cat='batcat --paging=never'
+fi
+
+# fd is packaged as fdfind on Debian/Ubuntu; alias only when fd is missing.
+if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
+    alias fd='fdfind'
+fi
+
+# Minimal git shortcuts.
+alias g='git'
+alias gst='git status -sb'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+
+# --- 9. Functions -----------------------------------------------------------------
+# Custom functions live in ~/.config/zsh/functions/ (added to fpath in
+# section 3) and load on first use:
+#   c       jump to a project directory under $PROJECTS
+#   gf      checkout a local branch tracking origin/<name>
+#   extract universal archive extractor
+autoload -Uz c gf extract
+
+# --- 10. OS specifics ---------------------------------------------------------------
+{{ if eq .chezmoi.os "darwin" }}
+# Darwin-specific interactive tweaks — reserved for future use.
+{{ end }}

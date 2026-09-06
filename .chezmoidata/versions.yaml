@@ -1,0 +1,15 @@
+# Pinned versions for everything downloaded or cloned by these dotfiles.
+# This is the single place to bump a version — change a value, then run
+# `chezmoi apply` (archives are refreshed when their URL changes).
+#
+# Usage:
+#   zsh plugin archives  -> .chezmoiexternal.toml
+#   neovim linux tarball -> .chezmoiscripts/run_onchange_after_12-neovim-linux.sh.tmpl
+versions:
+  # Tags (or commit sha where no tags are released) verified against upstream.
+  zsh_autosuggestions: "v0.7.1"
+  zsh_syntax_highlighting: "0.8.0"
+  # No releases on this repo: pin the master commit.
+  zsh_history_substring_search: "14c8d2e0ffaee98f2df9850b19944f32546fdea5"
+  # Official tarball for Linux (distro packages are too old for LazyVim).
+  neovim_linux: "v0.12.5"
