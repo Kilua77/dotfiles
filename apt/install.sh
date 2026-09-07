@@ -80,10 +80,16 @@ while IFS= read -r p || [ -n "$p" ]; do
   # output so a failure can explain itself — a silent install of a large
   # package is indistinguishable from a hang. Timeouts make a dead mirror
   # fail fast instead of hanging forever.
+  #
+  # DEBIAN_FRONTEND goes AFTER sudo (via env): sudo's env_reset strips a
+  # prefix assignment, and without it a post-install hook like needrestart
+  # prompts through debconf (frontend: Dialog here) on stdin/stdout — the
+  # captured pipe and this loop's redirected stdin — and hangs forever.
+  # </dev/null makes sure no hook can ever read the packages file instead.
   printf 'apt: installing %s ... ' "$p"
-  if out="$(DEBIAN_FRONTEND=noninteractive "$SUDO" apt-get install -y \
+  if out="$("$SUDO" env DEBIAN_FRONTEND=noninteractive apt-get install -y \
         -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
-        -o Acquire::Retries=2 "$p" 2>&1)"; then
+        -o Acquire::Retries=2 "$p" </dev/null 2>&1)"; then
     echo "ok"
     ok=$((ok + 1))
   else
