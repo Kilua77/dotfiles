@@ -78,9 +78,12 @@ while IFS= read -r p || [ -n "$p" ]; do
   fi
   # Progress line BEFORE the (possibly long) install, then capture apt's
   # output so a failure can explain itself — a silent install of a large
-  # package is indistinguishable from a hang.
+  # package is indistinguishable from a hang. Timeouts make a dead mirror
+  # fail fast instead of hanging forever.
   printf 'apt: installing %s ... ' "$p"
-  if out="$(DEBIAN_FRONTEND=noninteractive "$SUDO" apt-get install -y "$p" 2>&1)"; then
+  if out="$(DEBIAN_FRONTEND=noninteractive "$SUDO" apt-get install -y \
+        -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+        -o Acquire::Retries=2 "$p" 2>&1)"; then
     echo "ok"
     ok=$((ok + 1))
   else
