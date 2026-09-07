@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# dot — update everything: pull, relink, reinstall.
+# Any argument is passed through to script/bootstrap (--force, --dry-run).
+
+set -eu
+
+DOTFILES="${DOTFILES:-$HOME/.dotfiles}"
+cd "$DOTFILES"
+
+if [ -n "$(git remote)" ]; then
+  git pull --ff-only || echo 'WARN: git pull failed (offline?) — continuing'
+fi
+
+"$DOTFILES/script/bootstrap" "$@"
+"$DOTFILES/script/install"
+
+echo 'dot: done — restart your shell if zsh files changed'
