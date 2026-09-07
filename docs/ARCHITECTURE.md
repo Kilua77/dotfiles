@@ -99,8 +99,8 @@ sniffs the OS.
 
 ## zsh plugins
 
-No plugin manager. `zsh/install.sh` clones four plugins from the
-zsh-users organization as **pinned git clones** into
+No plugin manager. `zsh/install.sh` clones five plugins (four from the
+zsh-users organization plus per-directory-history) as **pinned git clones** into
 `~/.local/share/zsh/plugins/` (pins inline in that script — the single place
 to bump). A clone at the wrong revision is fetched and re-detached to the pin
 automatically. The sources are `[ -f ]`-guarded, so a shell works before

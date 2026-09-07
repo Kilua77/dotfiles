@@ -33,4 +33,15 @@ if [ -f "$ZSH_PLUGINS/zsh-history-substring-search/zsh-history-substring-search.
     bindkey '^[OB' history-substring-search-down
 fi
 
+if [ -f "$ZSH_PLUGINS/per-directory-history/per-directory-history.zsh" ]; then
+    # Two histories: everything is always SAVED to both the global history
+    # (the HISTFILE set in config.zsh) and a per-directory one; the toggle
+    # only switches which one Up/Down searches.
+    #   Ctrl-G  toggle  "using local history" <-> "using global history"
+    # Shells start in local (per-directory) mode. Must load after config.zsh
+    # (it snapshots $HISTFILE as the global history at load time).
+    HISTORY_BASE="${XDG_STATE_HOME:-$HOME/.local/state}/zsh/directory_history"
+    source "$ZSH_PLUGINS/per-directory-history/per-directory-history.zsh"
+fi
+
 unset ZSH_PLUGINS
