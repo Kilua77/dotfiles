@@ -17,7 +17,7 @@ cask "font-jetbrains-mono-nerd-font"
 # Shell and terminal
 brew "zsh"
 brew "tmux"
-brew "starship"
+brew "starship" # Linux: pinned tarball via zsh/install.sh (not in Ubuntu repos)
 brew "zoxide"
 brew "fzf"
 brew "eza"

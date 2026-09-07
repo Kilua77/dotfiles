@@ -1,7 +1,8 @@
 #!/bin/sh
 #
 # zsh/install.sh — clone the pinned zsh plugins into
-# $HOME/.local/share/zsh/plugins/ (no plugin manager, no submodules).
+# $HOME/.local/share/zsh/plugins/ (no plugin manager, no submodules),
+# and install the Starship prompt binary on Linux.
 #
 # Every plugin is pinned to an exact ref (tag or commit). Safe to re-run:
 #   - no clone            -> clone, then detach at the pin
@@ -63,3 +64,68 @@ pin https://github.com/zsh-users/zsh-completions \
   zsh-completions 0.35.0
 pin https://github.com/jimhester/per-directory-history \
   per-directory-history fbbf294abfa6819bb12df7d111c800f4f3a3dd07
+
+# --- Prompt: Starship ---------------------------------------------------------
+# The prompt is Starship (config in zsh/config/starship.toml.symlink, init in
+# tools.zsh behind a `command -v` guard — a missing binary silently keeps the
+# default zsh prompt). Homebrew owns it on macOS (Brewfile); Ubuntu does not
+# package starship at all, so on Linux the pinned official tarball is installed
+# to ~/.local/bin. Same policy as nvim/install.sh:
+#   - an existing foreign starship (brew, cargo, distro package) is kept
+#   - our own ~/.local/bin/starship is refreshed when the pin moves
+#   - every failure WARNs and the run continues
+#
+# Bump the pin: update STARSHIP_VER, then re-run this script. Note the arch
+# triplets are not symmetric: x86_64 has a gnu build, aarch64 only musl.
+
+install_starship() {
+  STARSHIP_VER="1.26.0"
+
+  # macOS: Homebrew owns the prompt binary (see the Brewfile).
+  [ "$(uname -s)" = "Darwin" ] && return 0
+
+  case "$(uname -m)" in
+    x86_64) starship_target="x86_64-unknown-linux-gnu" ;;
+    aarch64 | arm64) starship_target="aarch64-unknown-linux-musl" ;;
+    *)
+      echo "WARN: unsupported architecture $(uname -m) for starship, keeping the default prompt"
+      return 0
+      ;;
+  esac
+
+  if [ -x "$HOME/.local/bin/starship" ]; then
+    if [ "$($HOME/.local/bin/starship --version | head -1 | awk '{print $2}')" = "$STARSHIP_VER" ]; then
+      echo "zsh: starship ok (${STARSHIP_VER} already installed)"
+      return 0
+    fi
+    echo "zsh: starship: refreshing pin -> ${STARSHIP_VER}"
+  elif command -v starship >/dev/null 2>&1; then
+    echo "zsh: starship ok (foreign install at $(command -v starship), keeping it)"
+    return 0
+  fi
+
+  url="https://github.com/starship/starship/releases/download/v${STARSHIP_VER}/starship-${starship_target}.tar.gz"
+  tmp="$(mktemp -d)" || {
+    echo "WARN: mktemp failed, skipping starship install"
+    return 0
+  }
+
+  echo "zsh: downloading starship ${STARSHIP_VER} (${starship_target})"
+  # The tarball holds a single prebuilt `starship` binary at its root.
+  if ! curl -fsSL "$url" | tar -xz -C "$tmp"; then
+    echo "WARN: starship download/extract failed, keeping the default prompt"
+    rm -rf "$tmp"
+    return 0
+  fi
+
+  mkdir -p "$HOME/.local/bin"
+  if mv "$tmp/starship" "$HOME/.local/bin/starship"; then
+    chmod +x "$HOME/.local/bin/starship"
+    echo "zsh: starship ${STARSHIP_VER} installed -> ~/.local/bin/starship"
+  else
+    echo "WARN: starship install step failed, keeping the default prompt"
+  fi
+  rm -rf "$tmp"
+}
+
+install_starship
