@@ -24,10 +24,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # scan full history, not just the latest commit
-      - name: gitleaks
-        uses: gitleaks/gitleaks-action@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install gitleaks (pinned)
+        run: |
+          set -euo pipefail
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+      # Direct CLI scan of the whole history. The gitleaks-action wrapper
+      # computes a base..HEAD range that breaks on a repository's root commit
+      # (base^ does not exist) — a plain full scan has no such edge case.
+      - name: gitleaks (full history)
+        run: gitleaks detect --source . --redact --verbose --exit-code 1
 
   shellcheck:
     runs-on: ubuntu-latest
