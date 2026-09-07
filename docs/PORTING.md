@@ -24,7 +24,7 @@ equivalent, or is listed below with the reason it was dropped. Statuses:
 | oh-my-zsh git plugin (2016) | `zsh/git-aliases.zsh` — 44 aliases | RESTORED | `gf` reserved for the personal function; fetch = `gfe` |
 | zsh-completions (2016) | `zsh/install.sh` pin 0.35.0, fpath-only | RESTORED | dropped by mistake in the chezmoi rewrite |
 | colored-man-pages (2016) | `zsh/plugins/colored-man-pages.plugin.zsh` | PORTED | vendored, sourced by tools.zsh |
-| per-directory-history (2016) | — | DROPPED | SHARE_HISTORY preferred; dual histories confuse |
+| per-directory-history (2016) | `zsh/plugins.zsh` — pinned clone, **Ctrl-G** toggles local/global search | RESTORED | initially dropped in this rebuild; brought back on first use — both histories are always written, the toggle only switches which one Up/Down searches |
 | hhighlighter (2016) | — | DROPPED | `grep --color`/`bat` cover it |
 | command-not-found plugin (2016) | — | DROPPED | distro-specific, low value |
 | debian plugin (2016) | runtime guards in aliases/tools | ADAPTED | fdfind/batcat aliases, Debian fzf fallback |

@@ -61,3 +61,5 @@ pin https://github.com/zsh-users/zsh-history-substring-search \
   zsh-history-substring-search 14c8d2e0ffaee98f2df9850b19944f32546fdea5
 pin https://github.com/zsh-users/zsh-completions \
   zsh-completions 0.35.0
+pin https://github.com/jimhester/per-directory-history \
+  per-directory-history fbbf294abfa6819bb12df7d111c800f4f3a3dd07
