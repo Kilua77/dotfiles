@@ -143,8 +143,8 @@ for topic in "$DOTFILES_ROOT"/*/; do
   is_topic "$name" || continue
   process "${topic%/}"
   # R4: OS-specific subtree, linked only on the matching OS.
-  if [ -d "$topic/$os_dir" ]; then
-    process "$topic/$os_dir"
+  if [ -d "${topic%/}/$os_dir" ]; then
+    process "${topic%/}/$os_dir"
   fi
 done
 
