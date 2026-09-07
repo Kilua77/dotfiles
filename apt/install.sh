@@ -66,11 +66,16 @@ while IFS= read -r p || [ -n "$p" ]; do
     ok=$((ok + 1))
     continue
   fi
-  if "$SUDO" apt-get install -y "$p" >/dev/null 2>&1; then
-    echo "apt: $p ok"
+  # Progress line BEFORE the (possibly long) install, then capture apt's
+  # output so a failure can explain itself — a silent install of a large
+  # package is indistinguishable from a hang.
+  printf 'apt: installing %s ... ' "$p"
+  if out="$(DEBIAN_FRONTEND=noninteractive "$SUDO" apt-get install -y "$p" 2>&1)"; then
+    echo "ok"
     ok=$((ok + 1))
   else
-    echo "WARN: $p not installed"
+    echo "FAILED (last lines below)"
+    printf '%s\n' "$out" | tail -n 4
     failed=$((failed + 1))
   fi
 done < "$PACKAGES"
