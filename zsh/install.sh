@@ -94,7 +94,7 @@ install_starship() {
   esac
 
   if [ -x "$HOME/.local/bin/starship" ]; then
-    if [ "$($HOME/.local/bin/starship --version | head -1 | awk '{print $2}')" = "$STARSHIP_VER" ]; then
+    if [ "$("$HOME/.local/bin/starship" --version | head -1 | awk '{print $2}')" = "$STARSHIP_VER" ]; then
       echo "zsh: starship ok (${STARSHIP_VER} already installed)"
       return 0
     fi
