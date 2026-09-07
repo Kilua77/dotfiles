@@ -23,9 +23,11 @@ pin() {
   ref=$3
   dir=$PLUGINS_DIR/$name
 
+  # A directory without .git is a leftover extract (e.g. from a previous
+  # tarball-based setup) — replace it with a proper clone so drift repair works.
   if [ -d "$dir" ] && [ ! -d "$dir/.git" ]; then
-    printf '==> skip %s: %s exists and is not a git clone\n' "$name" "$dir" >&2
-    return 0
+    printf '==> replace %s: %s exists but is not a git clone\n' "$name" "$dir"
+    rm -rf "$dir"
   fi
 
   if [ ! -d "$dir/.git" ]; then
