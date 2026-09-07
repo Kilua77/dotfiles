@@ -27,7 +27,8 @@ eza
 bat
 fd-find
 duf
-dust
+# dust -- not packaged on Ubuntu 24.04 (du-dust ships no apt package); duf
+# above covers the disk-usage niche. macOS keeps it via the Brewfile.
 
 # c++ toolchain
 cmake
