@@ -1,0 +1,53 @@
+# ============================================================================
+# House ccache configuration — deployed to ~/.config/ccache/ccache.conf.
+#
+# Location notes (see `ccache -p` for the effective settings and where each
+# comes from, `ccache -s` for cache statistics):
+#   - Linux: ~/.config/ccache/ccache.conf is read automatically.
+#   - macOS: ccache uses ~/Library/Preferences/ccache/ccache.conf unless
+#     XDG_CONFIG_HOME is exported — export XDG_CONFIG_HOME=$HOME/.config in
+#     the shell profile to make this file authoritative there too.
+#   - A legacy ~/.ccache/ directory, if present, takes precedence over both:
+#     remove it so this file wins.
+#
+# All values support $VAR / ${VAR} environment expansion (per the manual).
+# ============================================================================
+
+# Cache budget: 5 GiB. Old entries are evicted least-recently-used once the
+# cap is hit. Raise it on machines with room to spare; it is per-user.
+max_size = 5.0G
+
+# Rewrite absolute paths below $HOME to relative before hashing them. This
+# is what makes cache hits possible across different checkouts and build
+# directory locations: the same source file at ~/work/a/proj and
+# ~/src/b/prog hashes identically instead of missing twice. Keep it more
+# specific than "/" so system paths are never rewritten.
+base_dir = $HOME
+
+# Hash relaxations that are safe for this setup and multiply the hit rate:
+#   pch_defines         — cache reliably when precompiled headers are used;
+#                         macro-definition changes inside PCHs are not
+#                         detected (acceptable: PCHs rarely change).
+#   time_macros         — ignore __DATE__/__TIME__/__TIMESTAMP__, so files
+#                         embedding a build time are cached (the stamps then
+#                         reflect the cached compile, not the fresh one).
+#   include_file_ctime  — ignore status-change times of included files:
+#   include_file_mtime  — ignore modification times of included files.
+#                         Without these, a fresh git clone or branch switch
+#                         (which touches mtimes) would miss the cache even
+#                         though file contents are identical; contents are
+#                         still hashed, so real edits always miss correctly.
+#   locale              — LANG/LC_* no longer contribute to the hash, so
+#                         compiles from shells with different locale
+#                         settings still hit (caveat: a cached diagnostic
+#                         message may be in the first locale's language).
+sloppiness = pch_defines,time_macros,include_file_ctime,include_file_mtime,locale
+
+# NOTE: hash_dir is deliberately NOT set. It defaults to true, which hashes
+# the compiler's working directory into the cache key — and that is the
+# correct behavior for this setup: every project uses separate build
+# directories (build/<preset>/), and debug builds bake working-directory
+# paths into the object files. Setting hash_dir = false raises the hit rate
+# across directories but can produce cache hits whose debug info points at
+# a different directory — subtly wrong debug builds. Cross-directory hits
+# are achieved safely via base_dir above instead.

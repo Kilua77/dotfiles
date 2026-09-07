@@ -1,0 +1,53 @@
+# zsh/git-aliases.zsh — git shortcuts.
+# Curated subset of the oh-my-zsh git plugin (one alias per line, easy to
+# diff against upstream). Deliberate deviations:
+#   - `gf` is ABSENT: it is the personal function in functions/gf
+#     (checkout a local branch tracking origin/<name>).
+#   - plain fetch is `gfe`, not gf.
+#   - gpsup inlines `git branch --show-current` instead of the omz
+#     git_current_branch helper this repo does not ship.
+
+alias g='git'
+alias ga='git add'
+alias gaa='git add --all'
+alias gap='git apply'
+alias gb='git branch'
+alias gba='git branch --all'
+alias gbd='git branch --delete'
+alias gbD='git branch --delete --force'
+alias gc='git commit --verbose'
+alias gcm='git commit --message'
+alias gc!='git commit --verbose --amend'
+alias gca='git commit --verbose --all'
+alias gca!='git commit --verbose --all --amend'
+alias gcb='git checkout -b'
+alias gco='git checkout'
+alias gsw='git switch'
+alias gswc='git switch --create'
+alias gd='git diff'
+alias gdw='git diff --word-diff'
+alias gdca='git diff --cached'
+alias gfe='git fetch'
+alias gfa='git fetch --all --prune'
+alias gl='git pull'
+alias glr='git pull --rebase'
+alias glo='git log --oneline --decorate'
+alias glols='git log --graph --pretty="%C(auto)%h%d %s %C(black)%C(bold)%cr" --stat'
+alias glgp='git log --stat --patch'
+alias gp='git push'
+alias gpd='git push --dry-run'
+alias gpf!='git push --force'
+alias gpsup='git push --set-upstream origin $(git branch --show-current)'
+alias gr='git remote'
+alias grba='git rebase --abort'
+alias grbc='git rebase --continue'
+alias grbi='git rebase --interactive'
+alias grh='git reset'
+alias grhh='git reset --hard'
+alias grs='git restore'
+alias grst='git restore --staged'
+alias gs='git status'
+alias gst='git status'
+alias gsta='git stash push'
+alias gstl='git stash list'
+alias gstp='git stash pop'

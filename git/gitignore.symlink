@@ -1,0 +1,20 @@
+# ~/.gitignore — global ignore rules, applied to every repository
+# (wired up via core.excludesfile in ~/.gitconfig).
+
+# OS cruft
+.DS_Store
+
+# Build output
+build/
+cmake-build-*/
+compile_commands.json
+
+# Python virtual environments
+.venv/
+
+# JavaScript dependencies
+node_modules/
+
+# C/C++ object and dependency files
+*.o
+*.d

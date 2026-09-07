@@ -1,0 +1,27 @@
+# ~/.localrc — per-machine secrets, flags and variance.
+#
+#   NEVER COMMITTED. This file is the documented template; the real
+#   ~/.localrc lives outside the repo and is sourced FIRST by
+#   ~/.zshrc (see zsh/zshrc.symlink), so every topic file sees it.
+#
+# Setup:
+#     cp ~/.dotfiles/zsh/localrc.example ~/.localrc
+#     chmod 600 ~/.localrc        # it holds secrets — lock it down
+#     $EDITOR ~/.localrc
+
+# --- secrets -------------------------------------------------------------
+# Generic placeholders — set whatever variables your own tools expect.
+# Keep provider details out of comments too: the repo is public.
+# export SECRET_TOKEN='change-me'
+# export MCP_SERVER_URL='https://example.invalid/mcp'
+
+# --- feature flags ---------------------------------------------------------
+# Opt in/out of optional bootstrap behavior (1 = on, unset = off).
+# export DOTFILES_VCPKG=1
+# export DOTFILES_SKIP_VSCODE_EXTENSIONS=1
+
+# --- machine variance --------------------------------------------------------
+# Compiler choice differs per machine (e.g. clang here, gcc elsewhere).
+# These NEVER go in a committed file — a fresh clone must stay neutral.
+# export CC=clang
+# export CXX=clang++

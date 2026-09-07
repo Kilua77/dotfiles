@@ -1,0 +1,8 @@
+#!/bin/sh
+#
+# Show the diff of everything you haven't pushed yet.
+#
+# Restored from the 2016 dotfiles (holman lineage).
+
+branch=$(git rev-parse --abbrev-ref HEAD)
+git diff "origin/${branch}..HEAD"

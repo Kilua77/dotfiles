@@ -1,0 +1,10 @@
+#!/bin/sh
+# headers <url> — print the HTTP response headers of a URL.
+# Any extra curl flags (e.g. -X POST -d ...) are passed through: they
+# belong before the URL on the command line.
+#
+# How it works: curl is run with -v so the headers travel on stderr while
+# the body goes to /dev/null; verbose noise lines (leading '*' or '}')
+# are dropped and the leading "> "/"< " prefixes stripped by cut.
+
+curl -sv "$@" 2>&1 >/dev/null | grep -v '^\*' | grep -v '^}' | cut -c3-

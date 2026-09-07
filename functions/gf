@@ -1,0 +1,11 @@
+# gf <branch> — checkout a local branch tracking origin/<branch>.
+# Loaded on first call via the autoload in functions/fpath.zsh.
+# Note: gf is deliberately NOT a git alias (zsh/git-aliases.zsh uses gfe
+# for plain fetch) — this function keeps the short name.
+
+if [[ -z "$1" ]]; then
+    echo "usage: gf <branch>" >&2
+    return 1
+fi
+
+git checkout -b "$1" "origin/$1"

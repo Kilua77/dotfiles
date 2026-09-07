@@ -1,0 +1,105 @@
+# lint — three cheap gates on every push and pull request:
+#   1. gitleaks     : scan full history for leaked secrets
+#   2. shellcheck   : every sh/bash script in the repo (shebang-aware — some
+#                     restored 2016 scripts are ruby and are only parsed)
+#   3. smoke        : run the real bootstrap in an isolated fake $HOME and
+#                     assert the linking conventions, zsh syntax, tmux config
+#
+# No template-rendering job: this repo has no templates. What you see in a
+# topic file is exactly what lands in $HOME.
+
+name: lint
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # scan full history, not just the latest commit
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+      - name: shellcheck every sh/bash script
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS= read -r -d '' f; do
+            shebang="$(head -n1 "$f")"
+            case "$shebang" in
+              *sh)
+                echo "shellcheck: $f"
+                shellcheck "$f" || fail=1
+                ;;
+              *)
+                echo "skip (non-shell): $f"
+                ;;
+            esac
+          done < <(find script bin -type f -print0;
+                   find . -mindepth 2 -maxdepth 2 -name install.sh -not -path './.git/*' -print0)
+          exit "$fail"
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zsh + tmux
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh tmux
+      - name: Bootstrap dry-run in an isolated HOME
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fakehome
+          env -u XDG_CONFIG_HOME HOME=/tmp/fakehome ./script/bootstrap --dry-run
+          # dry-run must not have touched anything
+          [ -z "$(find /tmp/fakehome -mindepth 1)" ] && echo "dry-run: touched nothing"
+      - name: Bootstrap for real and assert the linking conventions
+        run: |
+          set -euo pipefail
+          env -u XDG_CONFIG_HOME HOME=/tmp/fakehome ./script/bootstrap --force
+          src="$PWD"
+          check() { # check <readlink-output> <expected-src> <label>
+            [ "$1" = "$2" ] && echo "OK  $3" || { echo "FAIL $3: $1"; exit 1; }
+          }
+          check "$(readlink /tmp/fakehome/.gitconfig)" "$src/git/gitconfig.symlink" "R1 gitconfig"
+          [ -e /tmp/fakehome/.zshrc ] && echo "OK  R1 zshrc" || { echo "FAIL zshrc"; exit 1; }
+          [ -e /tmp/fakehome/.tmux.conf ] && echo "OK  R1 tmux" || { echo "FAIL tmux"; exit 1; }
+          [ -e /tmp/fakehome/.config/starship.toml ] && echo "OK  R2 starship" || { echo "FAIL starship"; exit 1; }
+          [ -d /tmp/fakehome/.config/nvim ] && echo "OK  R2 nvim dir" || { echo "FAIL nvim"; exit 1; }
+          # R4: darwin-only files must NOT be linked on a linux runner
+          [ ! -e /tmp/fakehome/.zprofile ] && echo "OK  R4 (no .zprofile on linux)" || { echo "FAIL .zprofile leaked"; exit 1; }
+      - name: Idempotence — second run links nothing new
+        run: |
+          set -euo pipefail
+          out="$(env -u XDG_CONFIG_HOME HOME=/tmp/fakehome ./script/bootstrap)"
+          echo "$out"
+          echo "$out" | grep -q "0 linked" || { echo "FAIL: not idempotent"; exit 1; }
+      - name: zsh syntax — every topic file
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS= read -r f; do
+            zsh -n "$f" || fail=1
+          done < <(find . -name '*.zsh' -not -path './.git/*' | sort)
+          [ -e /tmp/fakehome/.zshrc ] && zsh -n /tmp/fakehome/.zshrc
+          exit "$fail"
+      - name: tmux config loads
+        run: |
+          set -euo pipefail
+          tmux -L ci -f /tmp/fakehome/.tmux.conf new-session -d
+          tmux -L ci kill-server
+          echo "tmux: config loaded clean"

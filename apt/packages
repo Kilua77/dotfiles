@@ -1,0 +1,44 @@
+# apt/packages — Linux package list for apt/install.sh.
+#
+# One package name per line; blank lines and lines starting with '#' are
+# ignored. Section headers below are #-comments, not packages.
+# macOS counterpart: the root Brewfile — keep the two in sync.
+
+# core
+zsh
+git
+tmux
+curl
+unzip
+jq
+build-essential
+pkg-config
+python3
+python3-pip
+python3-venv
+nodejs
+npm
+
+# modern cli
+ripgrep
+fzf
+git-delta
+eza
+bat
+fd-find
+duf
+dust
+
+# c++ toolchain
+cmake
+ninja-build
+ccache
+clang-format
+clang-tidy
+clangd
+
+# misc
+shellcheck
+
+# clipboard
+xclip

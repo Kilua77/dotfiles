@@ -1,0 +1,121 @@
+# ~/.tmux.conf — managed by the dotfiles repo. Requires tmux >= 3.2. Adapted from holman/dotfiles lineage configs.
+
+# ── Clipboard (runtime detection, first match wins) ─────────────────────────
+# No build-time branches in this file: whichever tool exists when the server
+# starts wins. pbcopy (macOS) -> clip.exe (Windows/WSL interop) -> xclip -> xsel.
+# If none exists, copy-command stays unset and `y` copies to the tmux buffer.
+if-shell 'command -v pbcopy >/dev/null 2>&1' {
+    set -g copy-command "pbcopy"
+} {
+    if-shell 'command -v clip.exe >/dev/null 2>&1' {
+        set -g copy-command "clip.exe"
+    } {
+        if-shell 'command -v xclip >/dev/null 2>&1' {
+            set -g copy-command "xclip -in -selection clipboard"
+        } {
+            if-shell 'command -v xsel >/dev/null 2>&1' {
+                set -g copy-command "xsel -ib"
+            }
+        }
+    }
+}
+
+# ── Terminal ────────────────────────────────────────────────────────────────
+set -g default-terminal "tmux-256color"
+set -ga terminal-overrides ",xterm-256color:Tc"
+set -g escape-time 10
+
+# ── Core ────────────────────────────────────────────────────────────────────
+unbind C-b
+set -g prefix C-a
+bind C-a last-window
+bind a send-prefix
+
+set -g base-index 1
+set -g renumber-windows on
+set -g mouse on
+set -g history-limit 102400
+set -g repeat-time 500
+set -g status-keys emacs
+
+setw -g mode-keys vi
+
+# ── Windows and panes ───────────────────────────────────────────────────────
+# New windows and splits inherit the current pane's working directory.
+bind c new-window -c "#{pane_current_path}"
+bind | split-window -h -c "#{pane_current_path}"
+bind - split-window -v -c "#{pane_current_path}"
+
+bind -r > swap-window -t :+
+bind -r < swap-window -t :-
+bind BSpace previous-window
+bind Space next-window
+
+bind h select-pane -L
+bind j select-pane -D
+bind k select-pane -U
+bind l select-pane -R
+bind Tab select-pane -t :.+
+bind BTab select-pane -t :.-
+
+bind -r H resize-pane -L 10
+bind -r J resize-pane -D 10
+bind -r K resize-pane -U 10
+bind -r L resize-pane -R 10
+
+# Reload this file.
+bind R source-file ~/.tmux.conf \; display-message "Reloaded!"
+
+# ── Copy mode (vi) ──────────────────────────────────────────────────────────
+unbind [
+bind Escape copy-mode
+bind -T copy-mode-vi v send -X begin-selection
+bind -T copy-mode-vi y send -X copy-pipe-and-cancel
+
+# Paste: first try to pull the system clipboard into the paste buffer
+# (runtime-guarded per tool), then paste the tmux buffer as usual.
+bind p run-shell 'if command -v pbpaste >/dev/null 2>&1; then tmux set-buffer "$(pbpaste)"; elif command -v powershell.exe >/dev/null 2>&1; then tmux set-buffer "$(powershell.exe -NoProfile Get-Clipboard | tr -d "\r")"; elif command -v xclip >/dev/null 2>&1; then tmux set-buffer "$(xclip -out -selection clipboard)"; elif command -v xsel >/dev/null 2>&1; then tmux set-buffer "$(xsel -ob)"; fi; tmux paste-buffer'
+
+# ── Restored 2016 bindings ──────────────────────────────────────────────────
+# Lost in the 2016 cleanup and the later template rewrite; re-added, modernized.
+# run-shell expands #{...} once when the key is pressed; ##{...} survives as a
+# literal #{...} for the nested `tmux` calls below.
+
+# restored 2016 — prefix C-c: capture the pane scrollback to a temp file and
+# open it in $EDITOR (was: fixed /tmp/tmux-capture.txt + `view`).
+bind C-c run-shell 'f=$(mktemp /tmp/tmux-capture.XXXXXX) && tmux capture-pane -S -102400 -p > "$f" && tmux new-window -n capture "${EDITOR:-vi} \"$f\""'
+
+# restored 2016 — prefix C-n: jump to (or create) the NOTES window. The hook
+# lives in the private layer; this stays inert when the script is absent.
+bind C-n run-shell 'if [ -x "$HOME/.local/bin/tmux-notes" ]; then tmux select-window -t NOTES 2>/dev/null || tmux new-window -n NOTES "$HOME/.local/bin/tmux-notes"; fi'
+
+# restored 2016 — prefix 0: ftpane, fuzzy-switch to any pane of any session
+# (was: `bash -ci ftpane` shell function; inlined, no external dependency).
+if-shell 'command -v fzf >/dev/null 2>&1' {
+    bind 0 run-shell 'tmux split-window -l 12 "target=\$(tmux list-panes -a -F \"##{session_name}:##{window_index}.##{pane_index} ##{pane_current_command} ##{pane_title}\" | fzf --reverse +m); [ -n \"\$target\" ] || exit 0; set -- \$(printf \"%s\" \"\$target\" | tr \":.\" \"  \"); tmux select-window -t \"\$1:\$2\"; tmux select-pane -t \"\$1:\$2.\$3\"; tmux switch-client -t \"\$1\""'
+}
+
+# restored 2016 — M-t (no prefix): pick words from the last 1000 pane lines
+# and type the selection into the origin pane (no-ruby replacement for the
+# old tmuxwords.rb helper).
+if-shell 'command -v fzf >/dev/null 2>&1' {
+    bind -n M-t run-shell 'tmux split-window -p 40 "tmux send-keys -t #{pane_id} \"\$(tmux capture-pane -pS -1000 -t #{pane_id} | grep -oE \"[[:alnum:]_./-]+\" | sort -u | fzf -m | paste -sd \" \" -)\""'
+}
+
+# restored 2016 — prefix *: toggle pane synchronization and show the state.
+bind * set-window-option synchronize-panes \; display-message "synchronize-panes #{pane_synchronized}"
+
+# ── Status bar ──────────────────────────────────────────────────────────────
+# Static Catppuccin Mocha palette; replaces the 2016 theme.sh script (the old
+# colour190 yellow accent lives on as #f9e2af). No TPM, no external script.
+set -g status-interval 60
+set -g status-style "bg=#181825,fg=#cdd6f4"
+set -g status-left "#[fg=#f9e2af,bold] #S "
+set -g status-right "#[fg=#f9e2af]%a %d %H:%M "
+setw -g window-status-format "#[fg=#6c7086] #I #W "
+setw -g window-status-current-style "bg=#89b4fa,fg=#181825,bold"
+setw -g window-status-current-format " #I #W "
+set -g pane-border-style "fg=#313244"
+set -g pane-active-border-style "fg=#b4befe"
+set -g message-style "bg=#89b4fa,fg=#181825,bold"
+setw -g mode-style "bg=#313244,fg=#cdd6f4"

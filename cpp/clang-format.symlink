@@ -1,0 +1,81 @@
+---
+# ============================================================================
+# House C++ formatting style — deployed to ~/.clang-format.
+#
+# How this file is picked up: for every file it formats, clang-format looks
+# for a .clang-format in that file's directory, then in each parent
+# directory, and uses the closest one it finds. Since source checkouts
+# normally live somewhere under $HOME, this file acts as the house fallback
+# for any project that does not ship its own .clang-format. Editor
+# integrations (clangd, format-on-save plugins) resolve the style the same
+# way. A project needing a different style adds its own file, which then
+# shadows this one; generated projects instead inherit it via
+# `BasedOnStyle: InheritParentConfig` (see cpp-new).
+#
+# Change a value here to change the style everywhere, then re-apply.
+# Every key is explained; keys use the long-standing names understood by
+# all supported clang-format versions.
+# ============================================================================
+
+# Base style that every key below overrides. LLVM is clang-format's own
+# default (2-space indent, 80 columns) and the common denominator of the
+# ecosystem, so starting from it keeps reformat diffs small.
+BasedOnStyle: LLVM
+
+# Newest language level the formatter may assume. Affects how newer syntax
+# (concepts, ranges, designated initializers, modules) is broken and spaced.
+# Matches the house doctrine: C++20.
+Standard: c++20
+
+# One indentation step is 4 spaces — the house standard for C++.
+IndentWidth: 4
+
+# A literal tab character counts as 4 columns; only relevant if raw tabs
+# ever appear in a file before it is reformatted.
+TabWidth: 4
+
+# Never emit tabs, always spaces, so the rendered code is identical in every
+# editor regardless of individual tab settings.
+UseTab: Never
+
+# Wrap lines at 100 columns. 80 is tight for modern C++ (concepts, qualified
+# names, structured bindings) and pushes clang-format into ugly breaks;
+# 120 strains code review on split screens. 100 is the house compromise.
+ColumnLimit: 100
+
+# Pointer and reference bind left: "Type* p", "const Type& ref" — one
+# declaration style for the whole codebase.
+PointerAlignment: Left
+
+# public:/protected:/private: are outdented by one level (-4) so they sit
+# at the left edge of the class body, making section boundaries obvious.
+AccessModifierOffset: -4
+
+# Only functions defined inline inside a class body may collapse onto a
+# single line ("int size() const { return n; }"). Free and member function
+# definitions are always split across lines.
+AllowShortFunctionsOnASingleLine: Inline
+
+# Never place an if-body on the same line as the if: no "if (x) return;".
+# One-liners hide control flow from reviewers and from debuggers stepping
+# line by line.
+AllowShortIfStatementsOnASingleLine: Never
+
+# Braces open at the end of the introducing line (K&R style):
+# "if (x) {" rather than Allman's "if (x)\n{".
+BreakBeforeBraces: Attach
+
+# Leave the grouping of #include directives untouched: blocks separated by
+# blank lines (system / project / local) are not merged into one.
+IncludeBlocks: Preserve
+
+# Sort the includes within each block, case-sensitively. Case sensitivity
+# matters on case-insensitive filesystems: <ImGui.h> and <imgui.h> sort
+# deterministically. Sorted includes mean fewer merge conflicts and
+# reproducible builds.
+SortIncludes: CaseSensitive
+
+# Never adopt the pointer alignment found in the file being formatted;
+# always apply PointerAlignment above. Prevents legacy files from dragging
+# mixed "*" / "&" styles back in one declaration at a time.
+DerivePointerAlignment: false

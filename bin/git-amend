@@ -1,0 +1,7 @@
+#!/bin/sh
+#
+# Use the last commit message and amend your stuffs.
+#
+# Restored from the 2016 dotfiles (holman lineage).
+
+git commit --amend -C HEAD
