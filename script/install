@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+#
+# install — run the package managers and every topic's install.sh.
+#
+#   1. brew bundle on the root Brewfile (brew itself is the OS guard — it is
+#      simply absent on Linux), hash-gated so an unchanged Brewfile is a no-op
+#   2. every */install.sh in deterministic (alphabetical) topic order; a
+#      failing installer logs a WARN and does not stop the others
+#
+# Idempotent: safe to run as often as you like (that is what bin/dot does).
+
+set -euo pipefail
+
+DOTFILES_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+# shellcheck source=/dev/null  # gate.sh is linted on its own
+. "$DOTFILES_ROOT/script/gate.sh"
+
+# 1. Homebrew packages (macOS; the `brew` command is the guard).
+if command -v brew >/dev/null 2>&1 && [ -f "$DOTFILES_ROOT/Brewfile" ]; then
+  if gate brew "$DOTFILES_ROOT/Brewfile"; then
+    echo '==> Brewfile'
+    if brew bundle --file="$DOTFILES_ROOT/Brewfile"; then
+      gate_done brew "$DOTFILES_ROOT/Brewfile"
+    else
+      echo 'WARN: brew bundle failed (continuing)'
+    fi
+  else
+    echo '==> Brewfile (unchanged, skipped)'
+  fi
+fi
+
+# 2. Topic installers, alphabetical topic order.
+failures=0
+while IFS= read -r installer; do
+  echo "==> ${installer#"$DOTFILES_ROOT"/}"
+  if (cd "$(dirname "$installer")" && ./install.sh); then
+    :
+  else
+    echo "WARN: $installer failed (continuing)"
+    failures=$((failures + 1))
+  fi
+done < <(find "$DOTFILES_ROOT" -mindepth 2 -maxdepth 2 -name install.sh \
+           -not -path '*/.git/*' | sort)
+
+[ "$failures" -eq 0 ] || echo "install: $failures installer(s) failed"
+exit 0

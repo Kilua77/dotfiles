@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+#
+# bootstrap — link every *.symlink file into $HOME, per the topic conventions:
+#
+#   R1  <topic>/<name>.symlink          →  ~/.<name>
+#   R2  <topic>/config/<path>.symlink   →  ~/.config/<path>
+#   R3  <topic>/home/<path>.symlink     →  ~/<path>
+#   R4  the same three rules under <topic>/darwin/ or <topic>/linux/,
+#       applied only when the running OS matches (linux = anything not Darwin)
+#
+# Anything that is not a *.symlink file is never linked. That includes every
+# *.zsh file (those are sourced by zsh/zshrc.symlink), install.sh, READMEs and
+# *.example files — exclusion by construction, not by blacklist.
+#
+# Conflict policy for an existing target:
+#   default    back it up to ~/.dotfiles-backup/<stamp>/ then link
+#   --force    remove it, no backup (scripted re-runs, CI)
+#   --dry-run  print what would happen, touch nothing
+#
+# Symlink mechanics adapted from holman/dotfiles (MIT).
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+usage: bootstrap [--force] [--dry-run]
+
+  --force    replace conflicting targets without backing them up
+  --dry-run  print planned actions without touching anything
+EOF
+}
+
+FORCE=0
+DRY=0
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=1 ;;
+    --dry-run) DRY=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'bootstrap: unknown option: %s\n' "$arg" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+DOTFILES_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+BACKUP_ROOT="$HOME/.dotfiles-backup"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+# Honor XDG_CONFIG_HOME, but only when it lives under $HOME — an inherited
+# variable pointing elsewhere would scatter links outside the home we manage.
+XDG_CONFIG="$HOME/.config"
+if [ -n "${XDG_CONFIG_HOME:-}" ] && [ "${XDG_CONFIG_HOME#"$HOME"/}" != "${XDG_CONFIG_HOME}" ]; then
+  XDG_CONFIG="$XDG_CONFIG_HOME"
+fi
+
+os="$(uname -s)"
+if [ "$os" = "Darwin" ]; then os_dir=darwin; else os_dir=linux; fi
+
+linked=0 skipped=0 backed_up=0
+
+say() { printf '%s\n' "$*"; }
+
+# link_file <src> <dst>
+link_file() {
+  src="$1" dst="$2"
+
+  # Already linked to this source: idempotent no-op.
+  if [ -L "$dst" ]; then
+    if [ "$(readlink "$dst")" = "$src" ]; then
+      [ "$DRY" -eq 1 ] && say "OK        $dst"
+      skipped=$((skipped + 1))
+      return 0
+    fi
+  fi
+
+  # Conflicting target (file, directory, foreign symlink, or broken symlink —
+  # -e misses broken links, hence the extra -L test).
+  if [ -e "$dst" ] || [ -L "$dst" ]; then
+    if [ "$DRY" -eq 1 ]; then
+      if [ "$FORCE" -eq 1 ]; then
+        say "REPLACE   $dst -> ${dst#"$HOME"/} (force)"
+      else
+        say "BACKUP    $dst -> $BACKUP_ROOT/$STAMP/${dst#"$HOME"/}"
+      fi
+      say "LINK      $src -> $dst"
+      linked=$((linked + 1))
+      return 0
+    fi
+    if [ "$FORCE" -eq 1 ]; then
+      rm -rf "$dst"
+    else
+      backup="$BACKUP_ROOT/$STAMP/${dst#"$HOME"/}"
+      mkdir -p "$(dirname "$backup")"
+      mv "$dst" "$backup"
+      backed_up=$((backed_up + 1))
+    fi
+  elif [ "$DRY" -eq 1 ]; then
+    say "LINK      $src -> $dst"
+    linked=$((linked + 1))
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$dst")"
+  ln -sfn "$src" "$dst"
+  linked=$((linked + 1))
+}
+
+# process <dir> — apply R1-R3 to one directory (a topic dir, or a topic/<os>/ dir)
+process() {
+  d="$1"
+
+  # R1: depth-1 *.symlink (files or directories) -> ~/.<name>
+  while IFS= read -r src; do
+    name="$(basename "$src")"
+    link_file "$src" "$HOME/.${name%.symlink}"
+  done < <(find "$d" -maxdepth 1 -name '*.symlink' | sort)
+
+  # R2: config/**/*.symlink -> ~/.config/<path>
+  if [ -d "$d/config" ]; then
+    while IFS= read -r src; do
+      rel="${src#"$d/config/"}"
+      link_file "$src" "$XDG_CONFIG/${rel%.symlink}"
+    done < <(find "$d/config" -name '*.symlink' | sort)
+  fi
+
+  # R3: home/**/*.symlink -> ~/<path> (leading-dot paths, spaces allowed)
+  if [ -d "$d/home" ]; then
+    while IFS= read -r src; do
+      rel="${src#"$d/home/"}"
+      link_file "$src" "$HOME/${rel%.symlink}"
+    done < <(find "$d/home" -name '*.symlink' | sort)
+  fi
+}
+
+is_topic() {
+  case "$1" in
+    script|docs) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+for topic in "$DOTFILES_ROOT"/*/; do
+  [ -d "$topic" ] || continue
+  name="$(basename "$topic")"
+  is_topic "$name" || continue
+  process "${topic%/}"
+  # R4: OS-specific subtree, linked only on the matching OS.
+  if [ -d "$topic/$os_dir" ]; then
+    process "$topic/$os_dir"
+  fi
+done
+
+# Generate ~/.gitconfig.local on first run (identity + credential helper).
+# Without a tty (CI, scripted runs) this is skipped with a warning.
+setup_gitconfig() {
+  example="$DOTFILES_ROOT/git/gitconfig.local.symlink.example"
+  target="$HOME/.gitconfig.local"
+  [ -f "$example" ] || return 0
+  [ -f "$target" ] && return 0
+
+  if [ "$DRY" -eq 1 ]; then
+    say "WOULD     generate $target (interactive prompt for name/email)"
+    return 0
+  fi
+  if [ ! -t 0 ]; then
+    say "WARN: no $target and no tty — skipped; re-run bootstrap interactively"
+    return 0
+  fi
+
+  printf 'Set up %s\n' "$target"
+  printf 'git user name: '
+  read -r git_name
+  printf 'git email: '
+  read -r git_email
+  [ -n "$git_name" ] || { say 'WARN: empty name, skipping'; return 0; }
+  [ -n "$git_email" ] || { say 'WARN: empty email, skipping'; return 0; }
+
+  if [ "$os_dir" = "darwin" ]; then cred=osxkeychain; else cred=cache; fi
+  sed -e "s|AUTHORNAME|$git_name|g" \
+      -e "s|AUTHOREMAIL|$git_email|g" \
+      -e "s|GIT_CREDENTIAL_HELPER|$cred|g" \
+      "$example" > "$target"
+  chmod 600 "$target"
+  say "GENERATED $target"
+}
+setup_gitconfig
+
+if [ "$backed_up" -gt 0 ]; then
+  say "bootstrap: $linked linked, $skipped already ours, $backed_up backed up"
+  say "bootstrap: backups in $BACKUP_ROOT/$STAMP/"
+else
+  say "bootstrap: $linked linked, $skipped already ours"
+fi
