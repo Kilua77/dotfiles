@@ -1,0 +1,18 @@
+# ~/.zshenv — sourced by EVERY zsh invocation (login, interactive, scripts,
+# ssh, editors shelling out). Keep it minimal and fast: environment defaults
+# and PATH only. All interactive setup (prompt, plugins, key bindings) lives
+# in the topic *.zsh files loaded by ~/.zshrc.
+
+# XDG base directories — set only if the environment has not defined them.
+# XDG_CONFIG_HOME matters on macOS too: some tools (e.g. ccache) only read
+# ~/.config/... when it is set explicitly (otherwise they fall back to
+# ~/Library/Preferences or ~/.ccache).
+: "${XDG_CONFIG_HOME:=$HOME/.config}"
+: "${XDG_STATE_HOME:=$HOME/.local/state}"
+: "${XDG_CACHE_HOME:=$HOME/.cache}"
+export XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME
+
+# Personal executable directories first on PATH (only if they exist).
+[ -d "$HOME/bin" ] && PATH="$HOME/bin:$PATH"
+[ -d "$HOME/.local/bin" ] && PATH="$HOME/.local/bin:$PATH"
+export PATH

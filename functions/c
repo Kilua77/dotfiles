@@ -1,0 +1,11 @@
+# c <project> — jump to a project directory under $PROJECTS (default
+# ~/Workspace). Loaded on first call via the autoload in functions/fpath.zsh.
+# Completion: see the _c file next to this one.
+
+# Refuse to cd into the projects root by accident when no name is given.
+if [[ -z "$1" ]]; then
+    echo "usage: c <project>" >&2
+    return 1
+fi
+
+cd -- "${PROJECTS:-$HOME/Workspace}/$1"

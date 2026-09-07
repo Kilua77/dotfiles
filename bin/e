@@ -1,0 +1,9 @@
+#!/bin/sh
+# e [path] — open a path in $EDITOR (defaults to nvim), or the current
+# directory when no path is given.
+
+# Fall back to nvim when the environment does not define an editor.
+: "${EDITOR:=nvim}"
+export EDITOR
+
+exec "$EDITOR" "${1:-.}"

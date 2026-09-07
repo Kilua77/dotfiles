@@ -1,0 +1,49 @@
+# ~/.zshrc — the loader. Nothing else.
+#
+# THIS FILE ONLY LOADS TOPIC FILES. Add behavior to a topic *.zsh file
+# (zsh/aliases.zsh, tmux/path.zsh, a brand-new topic...), never here.
+#
+# Load-order contract (docs/ARCHITECTURE.md, "Shell load order"):
+#   1. ~/.localrc         secrets, flags and machine variance, before all
+#   2. */path.zsh         PATH and fpath setup, before anything runs
+#   3. every other *.zsh  options, aliases, plugins, tools — alphabetical
+#                         per topic (tmux before zsh, aliases before plugins)
+#   4. compinit           once, after every fpath entry has been added
+#   5. */completion.zsh   completion tuning, last
+#
+# The depth-1 glob below is deliberate: $DOTFILES/*/*.zsh picks exactly one
+# level per topic, so nested files (zsh/plugins/colored-man-pages.plugin.zsh,
+# anything vendored deeper down) are NOT auto-sourced — the topic file that
+# owns them pulls them in explicitly.
+
+export DOTFILES="$HOME/.dotfiles"
+
+# Local secrets and machine variance. Never committed (zsh/localrc.example
+# is the documented template).
+[ -f "$HOME/.localrc" ] && source "$HOME/.localrc"
+
+# Every topic's top-level *.zsh file. typeset -U keeps the array unique
+# (and PATH-like variables benefit from the same treatment elsewhere).
+typeset -U config_files
+config_files=($DOTFILES/*/*.zsh)
+
+# path files first, so everything after them can rely on PATH and fpath.
+for file in ${(M)config_files:#*/path.zsh}; do
+  source "$file"
+done
+
+# everything except the path and completion files.
+for file in ${${config_files:#*/path.zsh}:#*/completion.zsh}; do
+  source "$file"
+done
+
+# completion system, once, after all fpath entries exist. Doing it earlier
+# would miss the functions/ topic and the zsh-completions plugin directory.
+autoload -Uz compinit && compinit
+
+# completion files last: zstyles and other post-compinit tuning.
+for file in ${(M)config_files:#*/completion.zsh}; do
+  source "$file"
+done
+
+unset config_files

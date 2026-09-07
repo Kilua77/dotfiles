@@ -1,0 +1,73 @@
+#!/bin/sh
+# tm — tmux session picker: attach to an existing session, or create one.
+#
+#   with fzf    : existing sessions + a "new session (name)" entry are
+#                 piped to fzf; picking the new entry prompts for a name.
+#   without fzf : numbered menu on stdout.
+#
+# Safe to run when no tmux server is up yet: the session list is simply
+# empty and the first created session starts the server.
+
+if ! command -v tmux >/dev/null 2>&1; then
+    echo "tm: tmux is not installed" >&2
+    exit 1
+fi
+
+# Session names, one per line; empty when no server is running.
+list_sessions() {
+    tmux ls -F '#S' 2>/dev/null || true
+}
+
+# Reuse the session or, inside tmux, switch the current client to it.
+attach_or_switch() {
+    if [ -n "${TMUX:-}" ]; then
+        exec tmux switch-client -t "$1"
+    fi
+    exec tmux attach-session -t "$1"
+}
+
+# Create a session after asking for its name.
+new_session() {
+    printf 'new session name: '
+    read -r name
+    [ -n "$name" ] || exit 1
+    exec tmux new-session -s "$name"
+}
+
+if command -v fzf >/dev/null 2>&1; then
+    choice=$( { list_sessions; echo 'new session (name)'; } | fzf --prompt='tmux session> ')
+    [ -n "$choice" ] || exit 0  # ESC / Ctrl-C in fzf aborts quietly
+    if [ "$choice" = 'new session (name)' ]; then
+        new_session
+    fi
+    attach_or_switch "$choice"
+fi
+
+# Fallback: numbered menu when fzf is unavailable.
+sessions=$(list_sessions)
+if [ -z "$sessions" ]; then
+    # No server, no sessions: start fresh.
+    exec tmux new-session
+fi
+
+i=0
+printf '%s\n' "$sessions" | while IFS= read -r s; do
+    i=$((i + 1))
+    printf '%d) %s\n' "$i" "$s"
+done
+printf 'n) new session\n'
+printf 'choice: '
+read -r choice
+
+case "$choice" in
+    n|N) new_session ;;
+    ''|*[!0-9]*)
+        echo "tm: invalid choice" >&2
+        exit 1
+        ;;
+    *)
+        target=$(printf '%s\n' "$sessions" | sed -n "${choice}p")
+        [ -n "$target" ] || exit 1
+        attach_or_switch "$target"
+        ;;
+esac

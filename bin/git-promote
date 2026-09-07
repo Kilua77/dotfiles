@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# Promote the current local topic branch to a remote tracking branch of the
+# same name, by pushing and then setting up the git config.
+#
+# Thanks to ENTP:
+# http://hoth.entp.com/2008/11/10/improving-my-git-workflow
+#
+# Restored from the 2016 dotfiles (holman lineage).
+
+curr_branch=$(git symbolic-ref -q --short HEAD) || {
+    echo "git-promote: not on a branch (detached HEAD?)" >&2
+    exit 1
+}
+
+remote_branch=$(git branch -r | grep "origin/${curr_branch}")
+if [ -z "$remote_branch" ]; then
+    git push origin "$curr_branch"
+fi
+
+origin=$(git config --get "branch.${curr_branch}.remote")
+if [ -z "$origin" ]; then
+    git config --add "branch.${curr_branch}.remote" origin
+fi
+
+merge=$(git config --get "branch.${curr_branch}.merge")
+if [ -z "$merge" ]; then
+    git config --add "branch.${curr_branch}.merge" "refs/heads/${curr_branch}"
+fi

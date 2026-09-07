@@ -1,0 +1,90 @@
+# ~/.gitconfig — managed by the dotfiles repo; edit git/gitconfig.symlink
+# there, not this file (it is symlinked into place by script/bootstrap).
+
+# Machine-local settings (identity, credential helper) are generated into
+# ~/.gitconfig.local on first bootstrap and never stored in the repo.
+[include]
+    path = ~/.gitconfig.local
+
+# New repositories start on `main`.
+[init]
+    defaultBranch = main
+
+# Push the current branch only; create the upstream on first push.
+[push]
+    default = simple
+    autoSetupRemote = true
+
+# Pull with rebase to keep history linear.
+[pull]
+    rebase = true
+
+# Neovim as the message editor; global ignore file; delta as the pager.
+[core]
+    editor = nvim
+    excludesfile = ~/.gitignore
+    pager = delta
+
+# delta also drives interactive-stage diffs (e.g. `git add -p`).
+[interactive]
+    diffFilter = delta --color-only
+
+# delta: side-by-side diffs, n/n keys jump between hunks.
+[delta]
+    navigate = true
+    side-by-side = true
+
+# Show the base version in conflict markers for 3-way context.
+[merge]
+    conflictstyle = diff3
+
+# Color moved blocks in diffs.
+[diff]
+    colorMoved = default
+
+[color]
+    ui = auto
+
+# Restored 2016 preferences: fix typos after one character, stay quiet about
+# whitespace on apply, and keep mergetool/difftool invocations lean.
+[help]
+    autocorrect = 1
+[apply]
+    whitespace = nowarn
+[mergetool]
+    keepBackup = false
+[difftool]
+    prompt = false
+
+[alias]
+    co = checkout
+    st = status -sb
+    ci = commit
+    # Committer leaderboard for the current history.
+    count = shortlog -sn
+    # Undo the last commit, keeping its changes staged.
+    undo = reset --soft HEAD^
+    # Add to the last commit without reopening the editor.
+    amend = commit --amend --no-edit
+    # Pull, then show a short log of what came in (bin/git-up; 2016 muscle
+    # memory). The pull --rebase --autostash variant lives as the `glr`
+    # shell alias in the zsh topic.
+    up = !git-up
+    # Commits on this branch not yet pushed upstream.
+    unpushed = log @{u}..
+    # Diffstat of everything not pushed yet (bin/git-unpushed-stat also
+    # prints the commit count).
+    unpushed-stat = diff --stat @{u}..
+    # Push the current branch and set its upstream in one go.
+    promote = push -u origin HEAD
+    # Delete a remote branch by name.
+    nuke = push origin --delete
+    # Remove every local branch already merged into the current one
+    # (never the current or main branch).
+    delete-local-merged = !git branch --merged | grep -vE '^[*]|main' | xargs -r git branch -d
+    # bin/ scripts (the ! prefix runs them through a shell, so bin/ must be
+    # on PATH — the zsh topic adds ~/.dotfiles/bin).
+    wtf = !git-wtf
+    rank-contributors = !git-rank-contributors
+    track = !git-track
+    credit = !git-credit

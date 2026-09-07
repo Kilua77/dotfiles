@@ -1,0 +1,50 @@
+# ~/.config/starship.toml — prompt configuration.
+# Docs: https://starship.rs/config/
+#
+# House rule: add modules deliberately — each one costs startup time.
+# The layout echoes the old powerlevel9k preferences (cwd + git on the
+# left, status/duration/time on the right, single line) without p9k's
+# zsh-side cost. Language/runtimes (C++, cmake, python...) show up
+# automatically per directory; nothing to enable here.
+
+add_newline = true
+
+# Left segment: os icon, directory, git, prompt character.
+format = "$os$directory$git_branch$git_status$character"
+# Right segment: exit status, slow-command duration, clock.
+right_format = "$status$cmd_duration$time"
+
+[os]
+disabled = false
+
+[directory]
+truncation_length = 4
+truncate_to_repo = true
+style = "bold cyan"          # closest stock equivalent to p9k truncate_middle
+
+[git_branch]
+style = "bold purple"
+
+[git_status]
+style = "bold yellow"
+
+[cmd_duration]
+min_time = 2000              # only show when a command took longer than 2s
+
+[status]
+disabled = false
+symbol = "✘"
+
+[time]
+disabled = false
+style = "bright black"       # informative but unobtrusive, p9k habit
+
+[character]
+success_symbol = "[➜](bold green)"
+error_symbol = "[➜](bold red)"
+
+# 2016 wish, never active even then — kept commented for the day RAM
+# pressure becomes a prompt concern. Uncomment to enable.
+# [memory_usage]
+# disabled = false
+# threshold = 75

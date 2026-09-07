@@ -1,0 +1,7 @@
+#!/bin/sh
+#
+# Undo your last commit, but don't throw away your changes.
+#
+# Restored from the 2016 dotfiles (holman lineage).
+
+git reset --soft HEAD^
