@@ -18,7 +18,8 @@
 set -u
 
 # Version pin. Bump both together (tag is the GitHub release, ver the bare
-# number used in the tarball name and the install directory).
+# number used in the install directory; the tarball itself is unversioned,
+# named nvim-linux-<arch>.tar.gz since 0.10).
 NVIM_TAG="v0.12.5"
 NVIM_VER="0.12.5"
 
@@ -62,7 +63,7 @@ command -v curl >/dev/null 2>&1 || {
     exit 0
 }
 
-url="https://github.com/neovim/neovim/releases/download/${NVIM_TAG}/nvim-${NVIM_VER}-linux-${arch}.tar.gz"
+url="https://github.com/neovim/neovim/releases/download/${NVIM_TAG}/nvim-linux-${arch}.tar.gz"
 dest="$HOME/.local/opt/nvim-${NVIM_VER}"
 tmp="$(mktemp -d)" || {
     echo "WARN: mktemp failed, skipping Neovim install"
