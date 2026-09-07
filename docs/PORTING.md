@@ -75,7 +75,7 @@ equivalent, or is listed below with the reason it was dropped. Statuses:
 | Source | Destination | Status | Note |
 |---|---|---|---|
 | base config (prefix C-a, base-index 1, splits with cwd, hjkl panes, HJKL resize, swap windows, reload R, copy-mode v/y) | `tmux/tmux.conf.symlink` | PORTED | |
-| `*` synchronize-panes (typo'd + disabled at 2016 HEAD) | restored, fixed + state display | RESTORED | recovered from an intermediate commit |
+| `*` synchronize-panes (typo'd + disabled at 2016 HEAD) | restored, fixed + state display — primary now `A` (QWERTY roll off the prefix, "All panes"), `*` kept as alias | RESTORED | recovered from an intermediate commit |
 | `C-c` capture-pane (2016) | restored: mktemp + `$EDITOR` | RESTORED | |
 | `C-n` NOTES window (2016, personal path) | restored via private hook `~/.local/bin/tmux-notes` | RESTORED | inert when the hook is absent |
 | `M-t` tmuxwords.rb (2016) | restored without ruby: capture + fzf -m → send-keys | RESTORED | |
