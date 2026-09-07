@@ -29,6 +29,16 @@ PACKAGES="$TOPIC_DIR/packages"
 # shellcheck source=/dev/null  # gate.sh is linted on its own
 . "$(cd "$TOPIC_DIR/.." && pwd -P)/script/gate.sh"
 
+# One apt at a time: two concurrent runs (two terminals, dot twice) would
+# silently wait on the dpkg lock forever. Hold an flock; a second instance
+# exits politely instead.
+mkdir -p "$GATE_STATE"
+exec 9>"$GATE_STATE/apt.lock"
+if ! flock -n 9; then
+  echo "apt: another install is running, skipping (wait for it or retry)"
+  exit 0
+fi
+
 # Skip when the package list is unchanged since the last fully successful run.
 if ! gate apt "$PACKAGES"; then
   echo "apt: package list unchanged, skipping"
