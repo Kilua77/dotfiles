@@ -42,8 +42,11 @@ setw -g mode-keys vi
 
 # ── Windows and panes ───────────────────────────────────────────────────────
 # New windows and splits inherit the current pane's working directory.
-bind c new-window -c "#{pane_current_path}"
+# Splits: `|` is the mnemonic (vertical bar = side-by-side) and `-` stacks;
+# `\` is the QWERTY alias for the vertical split — unshifted, one keystroke
+# (the 2016 binding predates the AZERTY→QWERTY switch; `|` needs Shift+\).
 bind | split-window -h -c "#{pane_current_path}"
+bind \\ split-window -h -c "#{pane_current_path}"
 bind - split-window -v -c "#{pane_current_path}"
 
 bind -r > swap-window -t :+
@@ -102,7 +105,10 @@ if-shell 'command -v fzf >/dev/null 2>&1' {
     bind -n M-t run-shell 'tmux split-window -p 40 "tmux send-keys -t #{pane_id} \"\$(tmux capture-pane -pS -1000 -t #{pane_id} | grep -oE \"[[:alnum:]_./-]+\" | sort -u | fzf -m | paste -sd \" \" -)\""'
 }
 
-# restored 2016 — prefix *: toggle pane synchronization and show the state.
+# restored 2016 — pane synchronization (type into every pane at once).
+# Primary is `A` ("All panes"): Shift+a rolls straight off the C-a prefix on
+# QWERTY. The 2016 `*` (AZERTY-era Shift+µ) stays as an alias.
+bind A set-window-option synchronize-panes \; display-message "synchronize-panes #{pane_synchronized}"
 bind * set-window-option synchronize-panes \; display-message "synchronize-panes #{pane_synchronized}"
 
 # ── Status bar ──────────────────────────────────────────────────────────────
