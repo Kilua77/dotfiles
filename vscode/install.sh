@@ -29,6 +29,15 @@ if ! command -v code >/dev/null 2>&1; then
   exit 0
 fi
 
+# The CLI can exist but be unusable (typically a remote/server session whose
+# IPC socket is gone). A failed listing must not read as "nothing installed"
+# — that would try every extension and WARN once per extension.
+if ! installed="$(code --list-extensions 2>/dev/null)"; then
+  echo "WARN: 'code' CLI not usable right now (VS Code session/server not reachable?)"
+  echo "WARN: extension sync skipped -- re-run script/install once VS Code is up"
+  exit 0
+fi
+
 extensions=(
   # C/C++ toolchain
   llvm-vs-code-extensions.vscode-clangd
@@ -56,11 +65,9 @@ extensions=(
   streetsidesoftware.code-spell-checker
 )
 
-# Snapshot the installed set once so re-runs only touch missing extensions.
-# `code --install-extension` is idempotent anyway, but skipping the call
-# keeps a fully-provisioned machine off the marketplace entirely.
-installed="$(code --list-extensions 2>/dev/null || true)"
-
+# `installed` was snapshotted once above (the usability check); re-runs only
+# touch missing extensions, keeping a fully-provisioned machine off the
+# marketplace entirely (`code --install-extension` is idempotent anyway).
 for ext in "${extensions[@]}"; do
   if printf '%s\n' "$installed" | grep -Fixq "$ext"; then
     echo "vscode: already installed ${ext}"
