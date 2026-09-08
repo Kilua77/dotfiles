@@ -25,6 +25,20 @@ set -g default-terminal "tmux-256color"
 set -ga terminal-overrides ",xterm-256color:Tc"
 set -g escape-time 10
 
+# ── Shell ────────────────────────────────────────────────────────────────────
+# New windows and panes run zsh. The default is pinned from $SHELL when the
+# server starts, which lags behind `chsh` ($SHELL stays stale until the next
+# full login) — so set it explicitly. Absolute paths because config files get
+# no $(...) expansion: /usr/bin (Linux) first, /bin (macOS) second; without
+# zsh the login shell applies.
+if-shell '[ -x /usr/bin/zsh ]' {
+    set -g default-shell /usr/bin/zsh
+} {
+    if-shell '[ -x /bin/zsh ]' {
+        set -g default-shell /bin/zsh
+    }
+}
+
 # ── Core ────────────────────────────────────────────────────────────────────
 unbind C-b
 # Prefix C-f: Caps-as-Ctrl sits under the left pinky and the index finger
