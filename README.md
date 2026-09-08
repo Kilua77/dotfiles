@@ -44,5 +44,6 @@ git clone <this repo> ~/.dotfiles
   `zsh/localrc.example`.
 
 Docs: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
+[docs/OVERLAY.md](docs/OVERLAY.md) (run a private layer on top) ·
 [docs/MAINTENANCE.md](docs/MAINTENANCE.md) ·
 [docs/PORTING.md](docs/PORTING.md) (full 2016→2026 porting audit).

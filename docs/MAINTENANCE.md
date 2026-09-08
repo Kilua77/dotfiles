@@ -4,7 +4,7 @@ Recipes for everything you will want to change. One rule above all:
 **the target files in `$HOME` are symlinks — always edit the source in the
 repo**, never the symlinked file (edits through a symlink do land in the
 repo, but check `git -C ~/.dotfiles diff` before wondering where a change
-came from — that is the drift workflow for VS Code in the private layer).
+came from).
 
 ## Add an alias / a shell function / an option
 
@@ -66,29 +66,10 @@ export DOTFILES_SKIP_VSCODE_EXTENSIONS=1 # opt-out: skip the public VS Code set
 
 This repo is the **public plumbing**: generic, reusable, no personal data, no
 secrets, no hints about specific environments or services. Anything personal
-(provider accounts, AI tooling config, keyboard remaps, ssh hosts) lives in a
-**private overlay repo** using the exact same topic model, applied *after*
-this one:
-
-```sh
-~/.dotfiles-private/script/bootstrap && ~/.dotfiles-private/script/install
-```
-
-Rules for the split:
-
-- **Disjoint file sets** — the private repo must never manage a file this
-  repo already manages; the last apply would win, silently. Audit with:
-  `comm -12 <(cd ~/.dotfiles && find . -name '*.symlink' | sort) \
-            <(cd ~/.dotfiles-private && find . -name '*.symlink' | sort)`
-  (must be empty).
-- The public `vscode/install.sh` and the private `vscode/install.sh` are the
-  one coordinated pair: generic extensions here, personal ones there.
-- The public tmux `C-n` binding is inert unless the private convention
-  `~/.local/bin/tmux-notes` (executable) exists.
-- VS Code drift (it edits its own settings): edit live, then
-  `git -C ~/.dotfiles-private diff && git -C ~/.dotfiles-private commit`.
-  If VS Code ever replaces a symlink with a plain file, `bin/dot` +
-  private bootstrap re-links it (the orphan is backed up).
+lives in a **private overlay** — a second repo with the same topic model,
+applied after this one. The concept, the split criteria, the apply order, the
+disjoint-file-set audit and the public extension points are documented in
+[docs/OVERLAY.md](OVERLAY.md).
 
 ## Before pushing
 

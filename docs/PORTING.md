@@ -140,7 +140,7 @@ terminal editor.
 
 | chezmoi | Topic model |
 |---|---|
-| `run_onchange_*` scripts + content hashes | idempotent `install.sh` + `script/gate.sh` hash-gates (brew, apt, private MCP) |
+| `run_onchange_*` scripts + content hashes | idempotent `install.sh` + `script/gate.sh` hash-gates (brew, apt) |
 | templates + `.chezmoi.os` branches | static files + `darwin/`/`linux/` link-time subtrees + runtime `command -v` guards |
 | `.chezmoiexternal.toml` pinned tarballs | pinned git clones (`zsh/install.sh`) with drift repair |
 | `.chezmoidata/versions.yaml` | pins inline in each `install.sh` (single place per topic) |
@@ -149,9 +149,6 @@ terminal editor.
 
 ## Private layer
 
-A private overlay repo (same topic model, applied after this one) holds the
-personal, non-publishable state — full editor settings, AI-assistant policy,
-machine-specific configs. Its contents are deliberately not enumerated here;
-see its own README. One known cosmetic drift from the adoption: the editor
-files still carry "managed by chezmoi" header comments — clean them up on the
-next natural edit.
+Everything personal moved to a private overlay repo — the same topic model,
+applied after this one (see docs/OVERLAY.md). Its contents are deliberately
+not enumerated here.
