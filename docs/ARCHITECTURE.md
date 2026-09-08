@@ -74,8 +74,8 @@ exists) → `script/bootstrap "$@"` → `script/install`.
 Slow, side-effectful installers are wrapped in a gate: the sha256 of their
 input file is stored in `~/.local/state/dotfiles/gate-<key>/` after a
 successful run, and an unchanged input is skipped on the next run. Gated
-today: the `Brewfile` (key `brew`), `apt/packages` (key `apt`), and — in the
-private layer — `~/.localrc` for MCP registration (key `claude-mcp`).
+today: the `Brewfile` (key `brew`) and `apt/packages` (key `apt`); an
+overlay repo can add its own gates — see docs/OVERLAY.md.
 
 The gate knows file contents, not script contents: after editing an
 installer itself, force a re-run with
@@ -90,8 +90,8 @@ Everything machine-specific lives outside the repo:
   compiler variance (`CC`/`CXX`).
 - `~/.gitconfig.local`: identity (generated on first bootstrap) and
   per-machine git overrides.
-- The private overlay repo (see docs/MAINTENANCE.md): personal tools and
-  anything that should not be public.
+- A private overlay repo, if you keep one (see docs/OVERLAY.md): anything
+  personal or non-publishable.
 
 Runtime guards (`command -v …`) decide behavior differences at execution
 time; `darwin/`/`linux/` subtrees decide them at link time. Nothing else
