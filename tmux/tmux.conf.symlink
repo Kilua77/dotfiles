@@ -27,9 +27,16 @@ set -g escape-time 10
 
 # ── Core ────────────────────────────────────────────────────────────────────
 unbind C-b
-set -g prefix C-a
-bind C-a last-window
-bind a send-prefix
+# Prefix C-f: Caps-as-Ctrl sits under the left pinky and the index finger
+# rests on F (home-row bump), so the chord needs no hand movement. C-a is
+# freed for apps — Claude Code's /resume picker uses it to show sessions
+# from all projects — which also restores beginning-of-line in zsh. Cost
+# inside tmux: vim loses C-f page-down (C-d/C-u/C-b remain) and zsh loses
+# forward-char (arrow keys remain). C-f is the only Ctrl+letter without a
+# Claude Code binding (C-q also qualifies but trips tty flow control).
+set -g prefix C-f
+bind C-f last-window
+bind f send-prefix
 
 set -g base-index 1
 set -g renumber-windows on
