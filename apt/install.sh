@@ -9,9 +9,12 @@
 # non-apt systems (macOS uses Homebrew, other distros are untested).
 #
 # Failure policy: individual package failures WARN and continue — one
-# package missing on a derivative distro must never abort the run. The
-# gate is only recorded when every package succeeded, so failures are
-# retried on the next run.
+# package missing on a derivative distro must never abort the run. But
+# three consecutive failures with the SAME first output line mean a
+# systemic cause (no sudo password, a held dpkg lock, a dead mirror), so
+# the loop stops early and prints the error once with its fix instead of
+# once per package. The gate is only recorded when every package
+# succeeded, so failures are retried on the next run.
 
 set -u
 
@@ -67,6 +70,9 @@ fi
 
 ok=0
 failed=0
+failed_names=""
+sig=""       # first line of the last failure's output
+streak=0     # consecutive failures sharing that signature
 while IFS= read -r p || [ -n "$p" ]; do
   case "$p" in
     ''|'#'*) continue ;;
@@ -92,10 +98,47 @@ while IFS= read -r p || [ -n "$p" ]; do
         -o Acquire::Retries=2 "$p" </dev/null 2>&1)"; then
     echo "ok"
     ok=$((ok + 1))
+    streak=0
   else
     echo "FAILED (last lines below)"
     printf '%s\n' "$out" | tail -n 4
     failed=$((failed + 1))
+    failed_names="$failed_names $p"
+
+    this_sig="$(printf '%s\n' "$out" | head -n 1)"
+    [ -n "$this_sig" ] || this_sig='(no output)'
+    if [ "$this_sig" = "$sig" ]; then
+      streak=$((streak + 1))
+    else
+      sig="$this_sig"
+      streak=1
+    fi
+
+    # Three consecutive failures with the identical first line: the cause is
+    # systemic (credentials, lock, network), not package-specific. Print it
+    # once with a fix instead of once per remaining package, then stop —
+    # nothing later in the list can succeed anyway.
+    if [ "$streak" -ge 3 ]; then
+      echo "apt: stopping — the same error just failed $streak packages in a row:"
+      echo "apt:   $sig"
+      case "$sig" in
+        *'sudo: a password is required'* | *'sudo: a terminal is required'*)
+          echo 'apt: cause: sudo cannot ask for a password in this context'
+          echo 'apt: fix:   re-run script/install from an interactive terminal'
+          echo 'apt:        (or configure passwordless sudo for apt-get)'
+          ;;
+        *'Could not get lock'* | *'frontend lock'* | *'dpkg lock'*)
+          echo 'apt: cause: another apt/dpkg process holds the lock'
+          echo "apt: fix:   wait for it (pgrep -af 'apt|dpkg'), close other installers, re-run"
+          ;;
+        *)
+          echo 'apt: cause: (unrecognized) — resolve the error above, then re-run;'
+          echo 'apt:        the remaining packages retry (the gate is not recorded)'
+          ;;
+      esac
+      echo 'apt: skipping the remaining packages in this run'
+      break
+    fi
   fi
 done < "$PACKAGES"
 
@@ -134,6 +177,7 @@ if [ "$failed" -eq 0 ]; then
   echo "apt: $ok package(s) present/installed"
 else
   echo "apt: $ok ok, $failed failed -- gate not recorded, failures retry on the next run"
+  echo "apt: failed packages:${failed_names}"
 fi
 
 exit 0
