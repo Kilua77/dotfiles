@@ -39,6 +39,19 @@ if-shell '[ -x /usr/bin/zsh ]' {
     }
 }
 
+# ── Environment ─────────────────────────────────────────────────────────────
+# The VS Code remote CLI (`code`) and its git askpass reach the window's
+# server through per-window sockets ($VSCODE_IPC_HOOK_CLI, …); every window
+# reconnect mints new ones and deletes the old. tmux freezes panes'
+# environment and the default update-environment list carries no VSCODE_*
+# entries, so a session older than the last reconnect keeps dead sockets and
+# `code` fails with ENOENT. The full list below (defaults included; replaced,
+# not appended, so `prefix R` re-sourcing stays idempotent — tmux ≥ 3.4 shows
+# it split into array items) makes every attach republish the live values
+# into the session environment for new panes; running shells re-read them at
+# startup via vscode/env.zsh.
+set -g update-environment "DISPLAY KRB5CCNAME SSH_ASKPASS SSH_AUTH_SOCK SSH_AGENT_PID SSH_CONNECTION WINDOWID XAUTHORITY VSCODE_IPC_HOOK_CLI VSCODE_GIT_IPC_HANDLE VSCODE_GIT_ASKPASS_NODE VSCODE_GIT_ASKPASS_MAIN VSCODE_GIT_ASKPASS_EXTRA_ARGS"
+
 # ── Core ────────────────────────────────────────────────────────────────────
 unbind C-b
 # Prefix C-f: Caps-as-Ctrl sits under the left pinky and the index finger

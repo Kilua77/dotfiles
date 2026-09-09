@@ -3,8 +3,18 @@
 # overrides (feature flags, compiler choice) belong in ~/.localrc —
 # see zsh/localrc.example.
 
-export EDITOR=nvim
-export VISUAL=nvim
+# Editors. Inside a VS Code integrated terminal — live IPC socket (refreshed
+# first by vscode/env.zsh when tmux had frozen a stale one) and `code` on
+# PATH — the window becomes the editor: everything that shells out (git
+# commits, Claude Code's ctrl+G prompt editor) opens a tab there instead of
+# nvim in the terminal. Everywhere else, nvim.
+if [[ -n "$VSCODE_IPC_HOOK_CLI" && -S "$VSCODE_IPC_HOOK_CLI" ]] && command -v code >/dev/null 2>&1; then
+  export EDITOR="code --wait"
+  export VISUAL="code --wait"
+else
+  export EDITOR=nvim
+  export VISUAL=nvim
+fi
 
 # Root directory for personal projects — used by the `c` jump function
 # (functions/c) and its completion (functions/_c).
