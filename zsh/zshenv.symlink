@@ -13,6 +13,12 @@
 export XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME
 
 # Personal executable directories first on PATH (only if they exist).
+# ~/.hermes/node/bin is the Hermes-bundled Node prefix: it carries node/npm
+# and the npm-installed CLIs (`claude` lives there on bridge machines). The
+# guard keeps machines without Hermes untouched — same runtime-detection
+# philosophy as the rest of the repo. Bash gets it from ~/.bashrc (Hermes
+# installer line); zsh gets it here since ~/.zshrc became the repo loader.
 [ -d "$HOME/bin" ] && PATH="$HOME/bin:$PATH"
 [ -d "$HOME/.local/bin" ] && PATH="$HOME/.local/bin:$PATH"
+[ -d "$HOME/.hermes/node/bin" ] && PATH="$HOME/.hermes/node/bin:$PATH"
 export PATH
