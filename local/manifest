@@ -1,0 +1,43 @@
+# local/manifest — pinned single-binary tarballs for Linux, installed by
+# local/install.sh into ~/.local/bin (no root, no system packages). macOS:
+# the Brewfile owns these tools — this file never runs there.
+#
+# One tool per line, seven pipe-separated fields (greppable, in the spirit
+# of the old apt/packages):
+#
+#   name|version|owner/repo|tag|asset-x86_64|asset-aarch64|min
+#
+#   name     binary name, both inside the tarball and in ~/.local/bin
+#   version  pinned version (informational; also the refresh threshold)
+#   repo     GitHub owner/name; download URL is
+#            .../releases/download/<tag>/<asset>
+#   tag      release tag exactly as published (the v-prefix varies per
+#            project — that is why it is a separate field)
+#   asset-*  exact asset file name per architecture, written out in full:
+#            release naming is too heterogeneous to template safely
+#   min      oldest SYSTEM copy accepted instead of installing (see the
+#            ladder in local/lib.sh); "-" = always install our own
+#
+# Tuned so Ubuntu 22.04/24.04 and RHEL 9 machines keep acceptable system
+# copies and only download what their distro lacks (or ships too old).
+# Archive shapes handled: *.tar.gz, *.tar.xz, *.zip, and raw files (jq).
+
+# --- modern cli (core) ---
+rg|15.2.0|BurntSushi/ripgrep|15.2.0|ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz|ripgrep-15.2.0-aarch64-unknown-linux-musl.tar.gz|13.0.0
+fd|10.5.0|sharkdp/fd|v10.5.0|fd-v10.5.0-x86_64-unknown-linux-musl.tar.gz|fd-v10.5.0-aarch64-unknown-linux-musl.tar.gz|8.3.0
+bat|0.26.1|sharkdp/bat|v0.26.1|bat-v0.26.1-x86_64-unknown-linux-musl.tar.gz|bat-v0.26.1-aarch64-unknown-linux-musl.tar.gz|0.19.0
+eza|0.23.5|eza-community/eza|v0.23.5|eza_x86_64-unknown-linux-musl.tar.gz|eza_aarch64-unknown-linux-gnu.tar.gz|-
+fzf|0.74.4|junegunn/fzf|v0.74.4|fzf-0.74.4-linux_amd64.tar.gz|fzf-0.74.4-linux_arm64.tar.gz|0.44.0
+zoxide|0.10.0|ajeetdsouza/zoxide|v0.10.0|zoxide-0.10.0-x86_64-unknown-linux-musl.tar.gz|zoxide-0.10.0-aarch64-unknown-linux-musl.tar.gz|-
+delta|0.19.2|dandavison/delta|0.19.2|delta-0.19.2-x86_64-unknown-linux-musl.tar.gz|delta-0.19.2-aarch64-unknown-linux-gnu.tar.gz|0.16.5
+jq|1.8.2|jqlang/jq|jq-1.8.2|jq-linux-amd64|jq-linux-arm64|1.7
+starship|1.26.0|starship/starship|v1.26.0|starship-x86_64-unknown-linux-musl.tar.gz|starship-aarch64-unknown-linux-musl.tar.gz|-
+
+# --- disk / lint ---
+duf|0.9.1|muesli/duf|v0.9.1|duf_0.9.1_linux_x86_64.tar.gz|duf_0.9.1_linux_arm64.tar.gz|0.8.1
+dust|1.2.6|bootandy/dust|v1.2.6|dust-v1.2.6-x86_64-unknown-linux-musl.tar.gz|dust-v1.2.6-aarch64-unknown-linux-musl.tar.gz|-
+shellcheck|0.11.0|koalaman/shellcheck|v0.11.0|shellcheck-v0.11.0.linux.x86_64.tar.xz|shellcheck-v0.11.0.linux.aarch64.tar.xz|0.9.0
+
+# --- build tools ---
+ccache|4.14.1|ccache/ccache|v4.14.1|ccache-4.14.1-linux-x86_64-musl-static.tar.gz|ccache-4.14.1-linux-aarch64-musl-static.tar.gz|4.8
+ninja|1.13.2|ninja-build/ninja|v1.13.2|ninja-linux.zip|ninja-linux-aarch64.zip|1.10
