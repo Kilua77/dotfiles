@@ -96,12 +96,6 @@ done
 if [ "$failures" -gt 0 ]; then
   echo 'install: NEXT STEPS'
   echo 'install:   re-run ~/.dotfiles/script/install — idempotent, failures retry'
-  case "$failed_topics" in
-    *apt*)
-      echo 'install:   apt failed: if sudo asked for a password, re-run from an'
-      echo 'install:   interactive terminal (the script cannot answer prompts)'
-      ;;
-  esac
 fi
 
 exit 0
