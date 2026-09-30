@@ -72,7 +72,11 @@ select_compiler() {
         return 1
     fi
     export CC CXX
-    export CPPFLAGS="-I$PREFIX/include ${CPPFLAGS:-}"
+    # ncurses --enable-widec installs its headers under include/ncursesw/,
+    # not include/ — tmux's and zsh's configure look for plain <curses.h>/
+    # <ncurses.h>, so both -I paths must reach every build (and the
+    # have_header guard below, which shares CPPFLAGS).
+    export CPPFLAGS="-I$PREFIX/include -I$PREFIX/include/ncursesw ${CPPFLAGS:-}"
     export LDFLAGS="-L$PREFIX/lib ${LDFLAGS:-}"
     export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PREFIX/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
     echo "local: builds use CC=$CC"
@@ -140,8 +144,13 @@ need_tool() {  # need_tool <bin> <min> <pin> — returns 0 when a build IS requi
 }
 
 have_header() {  # have_header <header.h> — can the compiler see it
+    # $CPPFLAGS unquoted on purpose: -I flags must word-split onto the
+    # command line. Calling $CC bare probes system paths only, so the
+    # guard never saw the ncurses/libevent headers this layer installs
+    # and rebuilt them on every run.
+    # shellcheck disable=SC2086
     printf '#include <%s>\nint main(void){return 0;}\n' "$1" \
-        | "$CC" -x c - -o /dev/null >/dev/null 2>&1
+        | "$CC" -x c $CPPFLAGS - -o /dev/null >/dev/null 2>&1
 }
 
 # --- The layer -------------------------------------------------------------------
@@ -185,6 +194,20 @@ run_build() {
             "ncurses-$NCURSES_VER.tar.gz" "ncurses-$NCURSES_VER" \
             --enable-widec --without-shared --without-progs --without-ada --without-debug \
             || failed=1
+
+        # tmux's configure appends -lncurses — the NARROW name — whenever it
+        # finds ncurses.h, then keeps probing functions (forkpty...) with it
+        # on the link line. A widec-only install ships just libncursesw.a, so
+        # the unresolved -lncurses fails every later check: tmux falls back
+        # to its compat forkpty, whose declaration collides with glibc's
+        # pty.h and breaks the build. Alias the narrow names onto the widec
+        # library (same symbols; everything compiles against the wide
+        # headers anyway). Never overwrite a real narrow archive.
+        for lib in ncurses curses form menu panel; do
+            if [ -f "$PREFIX/lib/lib${lib}w.a" ] && [ ! -e "$PREFIX/lib/lib${lib}.a" ]; then
+                ln -s "lib${lib}w.a" "$PREFIX/lib/lib${lib}.a"
+            fi
+        done
     fi
 
     if [ "$want_tmux" -eq 1 ]; then
