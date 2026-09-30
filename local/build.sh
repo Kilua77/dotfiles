@@ -252,6 +252,15 @@ run_build() {
             want_zsh=0
             want_tmux=0
             deferred=1
+        elif [ "$want_tmux" -eq 1 ] \
+            && ! command -v yacc >/dev/null 2>&1 \
+            && ! command -v bison >/dev/null 2>&1; then
+            # tmux's configure hard-fails without a yacc even though the
+            # release tarball ships a pre-generated parser.
+            echo 'WARN: local: yacc/bison missing — tmux source build skipped'
+            echo 'WARN: local: hint: sudo dnf install bison / sudo apt-get install bison'
+            want_tmux=0
+            deferred=1
         fi
     fi
     if [ "$want_zsh" -eq 0 ] && [ "$want_tmux" -eq 0 ] && [ "$want_ts" -eq 0 ]; then
@@ -305,10 +314,15 @@ run_build() {
     fi
 
     if [ "$want_zsh" -eq 1 ]; then
+        # --disable-dynamic: zsh's curses.so etc. are dlopen-able modules,
+        # and a shared object cannot link the non-PIC static ncurses this
+        # layer builds (--without-shared). Static modules baked into the
+        # zsh binary link it fine — and nothing here ever dlopens a zsh
+        # module at runtime (plugins are sourced scripts).
         build_source zsh \
             "https://www.zsh.org/pub/zsh-$ZSH_VER.tar.xz" \
             "zsh-$ZSH_VER.tar.xz" "zsh-$ZSH_VER" \
-            --enable-multibyte \
+            --enable-multibyte --disable-dynamic \
             || failed=1
     fi
 

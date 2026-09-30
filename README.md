@@ -20,7 +20,8 @@ On Linux the install is **100% userland** (`~/.local`): no apt, no dnf, no
 sudo — a Red Hat machine without root follows the same path as Ubuntu,
 Debian or WSL (see `local/`). macOS uses Homebrew (`Brewfile`). Linux
 prerequisites, checked and reported but never installed by this repo:
-`git curl unzip xz tar python3` (plus `gcc`/`make` only if zsh/tmux must
+`git curl unzip xz tar python3` (plus `gcc`/`make` — and `bison` for tmux —
+only if zsh/tmux must
 be built from source). `xclip` is deliberately not provided — not
 userland-installable; the clipboard cascade in tmux uses `clip.exe`
 (WSL), `xsel` or `pbcopy` when present.

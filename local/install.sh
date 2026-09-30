@@ -55,6 +55,10 @@ check_prereqs() {
         echo "WARN: local: no compiler (gcc/clang) — source builds (zsh/tmux) will be skipped"
     fi
     command -v make >/dev/null 2>&1 || echo "WARN: local: make missing — source builds (zsh/tmux) will be skipped"
+    # tmux's configure additionally hard-requires a yacc (bison).
+    if ! command -v yacc >/dev/null 2>&1 && ! command -v bison >/dev/null 2>&1; then
+        echo "WARN: local: yacc/bison missing — the tmux source build will be skipped"
+    fi
     return 0
 }
 

@@ -116,7 +116,8 @@ column of the manifest — existing Ubuntu/RHEL machines re-download
 nothing); otherwise the pin is installed.
 
 **Prerequisite contract**: `git curl unzip xz tar python3` (and
-`gcc`/`make` for the source-build layer only) are checked and reported,
+`gcc`/`make` — plus `bison`, which tmux's configure hard-requires — for the
+source-build layer only) are checked and reported,
 never installed — the WARN text names the system package; this repo never
 runs sudo. `chsh` is likewise out of scope: tmux pins `default-shell`, and
 shells launch zsh from PATH, where `~/.local/bin` leads (zshenv).
