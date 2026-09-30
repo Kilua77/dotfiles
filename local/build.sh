@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 #
-# local/build.sh — guarded source builds for the two tools that cannot be
-# shipped as single upstream binaries: zsh and tmux. A build only happens
-# when the system copy is absent or older than the minimum — every distro
-# this repo targets passes both guards, so existing machines never rebuild:
+# local/build.sh — guarded source builds for the tools that cannot be
+# shipped as single upstream binaries: zsh, tmux and tree-sitter-cli.
+# A build only happens when the system copy is absent or older than the
+# minimum — every distro this repo targets passes the zsh/tmux guards,
+# so existing machines never rebuild those:
 #
-#   zsh  5.9.2   min 5.8    (Ubuntu 22.04/24.04 and RHEL 9 all pass)
-#   tmux 3.5a    min 3.2a   (same)
+#   zsh             5.9.2   min 5.8    (Ubuntu 22.04/24.04 and RHEL 9 pass)
+#   tmux            3.5a    min 3.2a   (same)
+#   tree-sitter-cli 0.27.0  min 0.26.1 (only when nvim exists — see below)
 #
 # Dependency chain, each step built into ~/.local only when missing:
 #
@@ -15,6 +17,17 @@
 #   ncurses 6.6            if the headers are absent (STATIC: --without-shared)
 #   libevent 2.1.13-stable if the headers are absent (STATIC: --disable-shared)
 #   tmux 3.5a, zsh 5.9.2
+#
+# tree-sitter-cli is in a different position: nvim-treesitter (main
+# branch) drives every parser install through the tree-sitter CLI and
+# requires >= 0.26.1 — and every official prebuilt since 0.26.1 is built
+# on ubuntu-24.04 runners (GLIBC >= 2.35), which dies on RHEL 9's glibc
+# 2.34 with "version 'GLIBC_2.39' not found". Same baseline trap as the
+# LLVM pin in local/prefix.sh; same answer: build from source. Rustup
+# (minimal profile, ~/.cargo + ~/.rustup, --no-modify-path) supplies
+# cargo when the system has none — the nvm precedent: outside ~/.local,
+# presence is the idempotency. Built only when nvim is installed; a
+# machine without an editor never pays for it.
 #
 # ncurses and libevent are deliberately built static-only: tmux and zsh
 # then embed their dependencies and never need LD_LIBRARY_PATH to run.
@@ -52,6 +65,9 @@ ZSH_VER="5.9.2"
 ZSH_MIN="5.8"
 TMUX_VER="3.5a"
 TMUX_MIN="3.2a"
+TS_VER="0.27.0"
+TS_MIN="0.26.1"
+RUST_TOOLCHAIN="1.92.0"
 PKGCONF_VER="3.0.7"
 NCURSES_VER="6.6"
 LIBEVENT_VER="2.1.13-stable"
@@ -153,29 +169,94 @@ have_header() {  # have_header <header.h> — can the compiler see it
         | "$CC" -x c $CPPFLAGS - -o /dev/null >/dev/null 2>&1
 }
 
+ensure_cargo() {  # a usable cargo on PATH — system rustup's, or rustup's own
+    command -v cargo >/dev/null 2>&1 && return 0
+    if [ ! -x "$HOME/.cargo/bin/cargo" ]; then
+        tmp="$(mktemp -d 2>/dev/null)" || {
+            echo "WARN: local: tree-sitter-cli: mktemp failed"
+            return 1
+        }
+        echo "local: rustup: installing rust ${RUST_TOOLCHAIN} (minimal profile)"
+        if ! fetch "https://sh.rustup.rs" "$tmp/rustup-init.sh" \
+            || ! sh "$tmp/rustup-init.sh" -y --profile minimal \
+                   --default-toolchain "$RUST_TOOLCHAIN" --no-modify-path \
+                   >>"$tmp/rustup.log" 2>&1; then
+            echo 'WARN: local: rustup: install failed, last lines:'
+            tail -5 "$tmp/rustup.log" 2>/dev/null | sed 's/^/WARN: local:   /'
+            rm -rf "$tmp"
+            return 1
+        fi
+        rm -rf "$tmp"
+    fi
+    # The rustup proxies resolve their toolchain from ~/.rustup on their
+    # own, so symlinks keep ~/.local/bin the single userland interface.
+    ln -sfn "$HOME/.cargo/bin/cargo" "$LOCAL_BIN/cargo"
+    ln -sfn "$HOME/.cargo/bin/rustc" "$LOCAL_BIN/rustc"
+    export PATH="$HOME/.cargo/bin:$PATH"
+    return 0
+}
+
+install_tree_sitter_cli() {
+    ensure_cargo || return 1
+    echo "local: tree-sitter-cli: cargo install --locked (a few minutes)"
+    tmp="$(mktemp -d 2>/dev/null)" || {
+        echo "WARN: local: tree-sitter-cli: mktemp failed"
+        return 1
+    }
+    if (cd "$tmp" && CARGO_TARGET_DIR="$tmp/build" \
+        cargo install tree-sitter-cli --version "$TS_VER" --locked \
+            --root "$PREFIX" -j"$JOBS" >>"$tmp/build.log" 2>&1); then
+        rm -rf "$tmp"
+        echo "local: tree-sitter-cli: installed -> $LOCAL_BIN/tree-sitter"
+        return 0
+    fi
+    echo 'WARN: local: tree-sitter-cli: build failed, last lines:'
+    tail -5 "$tmp/build.log" 2>/dev/null | sed 's/^/WARN: local:   /'
+    rm -rf "$tmp"
+    return 1
+}
+
 # --- The layer -------------------------------------------------------------------
 
 run_build() {
     want_zsh=0
     want_tmux=0
+    want_ts=0
     need_tool zsh "$ZSH_MIN" "$ZSH_VER" && want_zsh=1
     need_tool tmux "$TMUX_MIN" "$TMUX_VER" && want_tmux=1
-    if [ "$want_zsh" -eq 0 ] && [ "$want_tmux" -eq 0 ]; then
-        echo 'local: nothing to build (system zsh and tmux are fine)'
+    # tree-sitter-cli only serves nvim-treesitter; editor-less machines
+    # never pay the rustup download for it.
+    if [ -x "$LOCAL_BIN/nvim" ] || command -v nvim >/dev/null 2>&1; then
+        need_tool tree-sitter "$TS_MIN" "$TS_VER" && want_ts=1
+    fi
+    if [ "$want_zsh" -eq 0 ] && [ "$want_tmux" -eq 0 ] && [ "$want_ts" -eq 0 ]; then
+        echo 'local: nothing to build (system zsh, tmux and tree-sitter are fine)'
         return 0
     fi
 
-    if ! select_compiler; then
-        echo 'WARN: local: no compiler (gcc/clang) — zsh/tmux source builds skipped'
-        echo 'WARN: local: hint: sudo dnf install gcc make / sudo apt-get install gcc make'
-        return 1
-    fi
-    command -v make >/dev/null 2>&1 || {
-        echo 'WARN: local: make missing — zsh/tmux source builds skipped'
-        return 1
-    }
-
+    # The autotools builds (zsh/tmux and their deps) need CC + make; the
+    # tree-sitter-cli build needs neither — only cargo. A missing gcc/make
+    # defers (not fails) the zsh/tmux builds: the gate stays open and the
+    # next run retries once the prerequisite is installed system-wide.
     failed=0
+    deferred=0
+    if [ "$want_zsh" -eq 1 ] || [ "$want_tmux" -eq 1 ]; then
+        if ! select_compiler; then
+            echo 'WARN: local: no compiler (gcc/clang) — zsh/tmux source builds skipped'
+            echo 'WARN: local: hint: sudo dnf install gcc make / sudo apt-get install gcc make'
+            want_zsh=0
+            want_tmux=0
+            deferred=1
+        elif ! command -v make >/dev/null 2>&1; then
+            echo 'WARN: local: make missing — zsh/tmux source builds skipped'
+            want_zsh=0
+            want_tmux=0
+            deferred=1
+        fi
+    fi
+    if [ "$want_zsh" -eq 0 ] && [ "$want_tmux" -eq 0 ] && [ "$want_ts" -eq 0 ]; then
+        return "$deferred"
+    fi
 
     # tmux's configure hard-requires pkg-config; pkgconf's autotools path
     # installs the pkgconf binary, alias the traditional name when absent.
@@ -231,7 +312,11 @@ run_build() {
             || failed=1
     fi
 
-    [ "$failed" -eq 0 ]
+    if [ "$want_ts" -eq 1 ]; then
+        install_tree_sitter_cli || failed=1
+    fi
+
+    [ "$failed" -eq 0 ] && [ "$deferred" -eq 0 ]
 }
 
 if gate local-build "$LOCAL_DIR/build.sh"; then

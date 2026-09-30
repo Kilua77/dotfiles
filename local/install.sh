@@ -10,8 +10,9 @@
 #   manifest   local/manifest   single-binary tarballs  -> ~/.local/bin
 #   prefix     local/prefix.sh  cmake + LLVM toolchains -> ~/.local/opt
 #   nvm        here             nodejs/npm (zsh/env.zsh lazy-loads it)
-#   build      local/build.sh   zsh / tmux from source, only when the
-#                                system copy is absent or too old
+#   build      local/build.sh   zsh / tmux / tree-sitter-cli from source,
+#                                only when the system copy is absent or
+#                                too old
 #
 # Prerequisites are CHECKED and reported, never installed: git, curl,
 # unzip, xz, tar, python3 (plus gcc/clang and make for the source-build

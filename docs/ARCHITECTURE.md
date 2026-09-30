@@ -92,12 +92,22 @@ order, each with its own gate:
    `~/.localrc` opts out.
 3. **nvm** (not gated; `~/.nvm` is the idempotency) — nodejs/npm, already
    lazy-loaded by `zsh/env.zsh`.
-4. **`local/build.sh`** (gate `local-build`) — zsh and tmux from source,
-   *only* when the system copy is absent or older than the minimum
-   (zsh ≥ 5.8, tmux ≥ 3.2a — every targeted distro passes, so existing
-   machines never rebuild). Dependencies (pkgconf, ncurses, libevent) are
-   built **static** into `~/.local` on demand, so the resulting tmux/zsh
-   are self-contained and never need `LD_LIBRARY_PATH`.
+4. **`local/build.sh`** (gate `local-build`) — zsh, tmux and the
+   tree-sitter CLI from source, *only* when the system copy is absent
+   or older than the minimum (zsh ≥ 5.8, tmux ≥ 3.2a — every targeted
+   distro passes, so existing machines never rebuild those).
+   Dependencies (pkgconf, ncurses, libevent) are built **static** into
+   `~/.local` on demand, so the resulting tmux/zsh are self-contained
+   and never need `LD_LIBRARY_PATH`. The tree-sitter CLI (≥ 0.26.1,
+   what nvim-treesitter's main branch drives parser installs through)
+   is source-built too: every official prebuilt of it needs glibc
+   ≥ 2.35 and RHEL 9 provides 2.34 — the same baseline trap as the
+   LLVM pin in `local/prefix.sh`. Rustup (minimal profile, `~/.cargo`
+   + `~/.rustup`, `--no-modify-path` — the nvm precedent) supplies
+   cargo when the system has none, and the build only runs on machines
+   where nvim exists. The `mason.nvim` PATH override in
+   `nvim/…/plugins/treesitter-cli.lua` keeps this copy ahead of
+   mason's incompatible prebuilt inside Neovim.
 
 **Skip-if-present ladder** (shared, in `local/lib.sh`): our own
 `~/.local/bin/<name>` wins and is refreshed only when older than the pin
