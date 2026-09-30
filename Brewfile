@@ -4,7 +4,9 @@
 # this file (see script/gate.sh): an unchanged Brewfile is a no-op.
 # Manual run (from the repo root): brew bundle --file=Brewfile
 #
-# Linux equivalents live in apt/packages (installed by apt/install.sh).
+# Linux equivalents live in local/manifest (single-binary tarballs) and
+# local/prefix.sh (cmake + the LLVM toolchain), installed userland into
+# ~/.local by local/install.sh — no system packages, no sudo.
 
 # --- Casks (GUI applications and fonts) --------------------------------------
 
@@ -17,7 +19,7 @@ cask "font-jetbrains-mono-nerd-font"
 # Shell and terminal
 brew "zsh"
 brew "tmux"
-brew "starship" # Linux: pinned tarball via zsh/install.sh (not in Ubuntu repos)
+brew "starship" # Linux: pinned tarball via local/manifest (never in distro repos)
 brew "zoxide"
 brew "fzf"
 brew "eza"
