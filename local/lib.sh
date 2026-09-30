@@ -54,6 +54,10 @@ ver_ge() {
 
 bin_version() {
     v="$("$1" --version 2>/dev/null | grep -oE '[0-9]+([.][0-9]+)+' | head -1)"
+    # Not everything takes --version (tmux only knows -V) — an empty
+    # first probe used to read as "unknown", which need_tool treats as
+    # older-than-pin and rebuilds on every run.
+    [ -n "$v" ] || v="$("$1" -V 2>/dev/null | grep -oE '[0-9]+([.][0-9]+)+' | head -1)"
     printf '%s' "${v:-unknown}"
 }
 
