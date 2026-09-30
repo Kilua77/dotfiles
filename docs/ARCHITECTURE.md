@@ -115,15 +115,34 @@ shells launch zsh from PATH, where `~/.local/bin` leads (zshenv).
 userland-installable. tmux's copy-command cascade (pbcopy → clip.exe →
 xclip → xsel) keeps working with whatever the system provides.
 
+## The fonts topic (Linux terminals)
+
+`fonts/install.sh` (gate `fonts-nerd`) unpacks the JetBrainsMono Nerd
+Font Mono TTFs from a pinned ryanoasis/nerd-fonts release into
+`~/.local/share/fonts` and registers them with `fc-cache` — userland, no
+root. Every private-use-area glyph the configs draw (LazyVim's
+lualine/mini.icons, starship's module icons, Claude Code's statusline
+symbols) lives in that font; on a stock-fonts machine (DejaVu Sans Mono
+and friends) those render as tofu boxes that look like broken plugins
+but never are. macOS gets the same font from the Brewfile
+(`font-jetbrains-mono-nerd-font`); the installer exits silently on
+Darwin.
+
+Selecting the font *in* the terminal emulator stays per-machine state
+the repo never touches: the install only makes the family selectable
+(GNOME Terminal: uncheck "Use the system fixed-width font", pick
+"JetBrainsMono Nerd Font Mono").
+
 ## Hash-gates (script/gate.sh)
 
 Slow, side-effectful installers are wrapped in a gate: the sha256 of their
 input file is stored as a flat file `~/.local/state/dotfiles/gate-<key>`
 after a successful run, and an unchanged input is skipped on the next run.
 Gated today: the `Brewfile` (key `brew`), `local/manifest` (`local-tools`),
-`local/prefix.sh` (`local-prefix`) and `local/build.sh` (`local-build` —
-for the local layer the pins live in the scripts, so the scripts are the
-gate inputs); an overlay repo can add its own gates — see docs/OVERLAY.md.
+`local/prefix.sh` (`local-prefix`), `local/build.sh` (`local-build`) and
+`fonts/install.sh` (`fonts-nerd` — for these the pins live in the scripts,
+so the scripts are the gate inputs); an overlay repo can add its own
+gates — see docs/OVERLAY.md.
 
 The gate knows file contents, not script contents: after editing an
 installer itself, force a re-run with
