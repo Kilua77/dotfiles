@@ -25,7 +25,7 @@ echo "==> linux-smoke: $(grep PRETTY_NAME /etc/os-release | cut -d'"' -f2)"
 
 # --- Root phase: prerequisites + the unprivileged user --------------------------
 
-base="git curl unzip tar gzip python3 ca-certificates"
+base="git curl unzip tar gzip python3 ca-certificates bison fontconfig"
 if command -v dnf >/dev/null 2>&1; then
     # --allowerasing: the base images ship curl-minimal, which conflicts
     # with the plain curl package (it already provides /usr/bin/curl).
