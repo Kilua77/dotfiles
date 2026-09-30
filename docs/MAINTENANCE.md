@@ -33,8 +33,13 @@ Then `bin/dot` (or `~/.dotfiles/script/bootstrap`).
    expensive part in a gate:
    `. "$(cd "$(dirname "$0")/.." && pwd -P)/script/gate.sh"`
    `gate mytool input-file && { do_things && gate_done mytool input-file; }`
-5. Packages: add the brew formula to `Brewfile` **and** the apt package to
-   `apt/packages` (both are hash-gated).
+5. Packages: add the brew formula to `Brewfile` **and** a row to
+   `local/manifest` (both are hash-gated). The manifest wants one line:
+   `name|version|owner/repo|tag|asset-x86_64|asset-aarch64|min` — the
+   assets are the exact release file names, written out per arch. A tool
+   that is a whole tree rather than one binary goes in `local/prefix.sh`
+   (versioned `~/.local/opt` dir + unversioned symlinks); a tool with no
+   upstream binary goes in `local/build.sh` (guarded source build).
 6. Re-run `bin/dot`.
 
 ## Bump a pinned zsh plugin
@@ -60,6 +65,7 @@ rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
 export CC=clang CXX=clang++
 export DOTFILES_VCPKG=1                  # opt-in: bootstrap vcpkg into ~/vcpkg
 export DOTFILES_SKIP_VSCODE_EXTENSIONS=1 # opt-out: skip the public VS Code set
+export DOTFILES_SKIP_LLVM=1              # opt-out: skip the ~2 GB LLVM prefix
 ```
 
 ## Public vs private
@@ -90,5 +96,7 @@ in an isolated fake `$HOME` on every push.
 - **A shell file has a syntax error** → `zsh -n <file>`; the loader is
   depth-1 (`*/*.zsh`), nested files are not sourced by design.
 - **Something got clobbered** → look in `~/.dotfiles-backup/<stamp>/`.
+- **Disk-tight machine** → `DOTFILES_SKIP_LLVM=1` (the LLVM prefix is
+  ~6 GB installed); the manifest tools are a few hundred MB total.
 - **Where did my old config go?** → the pre-rebuild state is preserved in
   the git tags `legacy` (2016) and `chezmoi-v1` (2026 intermediate state).

@@ -16,6 +16,15 @@ git clone <this repo> ~/.dotfiles
 ~/.dotfiles/script/install     # packages + per-topic installers
 ```
 
+On Linux the install is **100% userland** (`~/.local`): no apt, no dnf, no
+sudo — a Red Hat machine without root follows the same path as Ubuntu,
+Debian or WSL (see `local/`). macOS uses Homebrew (`Brewfile`). Linux
+prerequisites, checked and reported but never installed by this repo:
+`git curl unzip xz tar python3` (plus `gcc`/`make` only if zsh/tmux must
+be built from source). `xclip` is deliberately not provided — not
+userland-installable; the clipboard cascade in tmux uses `clip.exe`
+(WSL), `xsel` or `pbcopy` when present.
+
 ## Topics
 
 | Topic | What lives there |
@@ -26,7 +35,7 @@ git clone <this repo> ~/.dotfiles
 | `tmux/` | tmux configuration |
 | `nvim/` | Neovim (LazyVim) as the fast terminal editor |
 | `cpp/` | C++ toolchain: clang-format/tidy, ccache, project generator |
-| `apt/` | Linux package list + installer |
+| `local/` | Linux userland tools: pinned tarballs (`manifest`), cmake + LLVM prefixes, guarded zsh/tmux source builds — no sudo |
 | `vscode/` | VS Code extension set (generic) |
 | `claude/` | AI-assistant hook plumbing (generic) |
 | `bin/` | scripts on PATH — `dot` updates everything |
@@ -39,7 +48,9 @@ git clone <this repo> ~/.dotfiles
   `topic/linux/` apply only on the matching OS.
 - `zsh/zshrc.symlink` sources every `*/*.zsh` (path files first, completions
   last) — add a file, it is live.
-- `script/install` runs `brew bundle` (macOS) then each topic's `install.sh`.
+- `script/install` runs `brew bundle` (macOS) then each topic's `install.sh`;
+  on Linux the `local/` topic delivers every tool into `~/.local` (pinned
+  upstream tarballs, toolchain prefixes, guarded source builds).
 - Secrets and machine flags live in `~/.localrc` (never committed) — see
   `zsh/localrc.example`.
 

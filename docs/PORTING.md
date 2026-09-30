@@ -152,3 +152,30 @@ terminal editor.
 Everything personal moved to a private overlay repo — the same topic model,
 applied after this one (see docs/OVERLAY.md). Its contents are deliberately
 not enumerated here.
+
+## 2026-09: apt topic retired (tag `apt-v1`)
+
+The apt topic was removed so that Linux installs are 100% userland — the
+driver is Red Hat machines without root, where apt/dnf cannot run at all.
+Same policy as the rest of this audit: nothing is dropped silently. Every
+line of `apt/packages` and every elevation it performed:
+
+| apt/packages entry | Userland replacement | Status |
+|---|---|---|
+| `zsh` | `local/build.sh` source build (pin 5.9.2) — only when system zsh < 5.8; every targeted distro passes, so nothing rebuilds | ADAPTED |
+| `tmux` | `local/build.sh` source build (pin 3.5a) — only when system tmux < 3.2a; static ncurses/libevent, no LD_LIBRARY_PATH | ADAPTED |
+| `git`, `curl`, `unzip`, `python3` | prerequisite contract: checked and reported by `local/install.sh`, never installed | ADAPTED |
+| `build-essential`, `clang-format`, `clang-tidy`, `clangd` | one LLVM release tarball in `local/prefix.sh` (`~/.local/opt/llvm-<ver>` + unversioned symlinks — replaces apt's `update-alternatives` trick) | ADAPTED |
+| `cmake`, `ninja-build`, `ccache` | `local/prefix.sh` (cmake) + `local/manifest` (ninja, ccache musl-static) | ADAPTED |
+| `pkg-config` | built from source by `local/build.sh` only when tmux must be built and pkg-config is absent | ADAPTED |
+| `ripgrep`, `fzf`, `git-delta`, `bat`, `fd-find`, `duf`, `jq`, `shellcheck` | `local/manifest` pinned tarballs, musl-static where they exist | ADAPTED |
+| `eza` | `local/manifest` (never packaged by Ubuntu) | ADAPTED |
+| `nodejs`, `npm` | nvm (`~/.nvm`), already lazy-loaded by `zsh/env.zsh`; an acceptable system node is kept | ADAPTED |
+| `python3-pip`, `python3-venv` | — | DROPPED | installed on demand per project (`python3 -m venv`/pip bootstraps itself); the apt line was a side effect, not a used feature |
+| `xclip` | — | DROPPED | X11 libs are not userland-installable; tmux's copy-command cascade (pbcopy → clip.exe → xclip → xsel) keeps using whatever the system provides |
+| `dust` (in Brewfile, missing from Ubuntu 24.04) | `local/manifest` on Linux | RESTORED | parity across OSes is now free |
+| starship tarball in `zsh/install.sh` | moved to `local/manifest` (x86_64 upgraded gnu → musl) | ADAPTED | one place for every Linux tool pin |
+
+Rollback: `git checkout apt-v1 -- apt/`. Stale `gate-apt` state files on
+existing machines are inert leftovers — delete at leisure.
+
