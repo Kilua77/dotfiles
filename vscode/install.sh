@@ -24,8 +24,15 @@ if [ "${DOTFILES_SKIP_VSCODE_EXTENSIONS:-0}" = "1" ]; then
 fi
 
 # One WARN for the whole run if the CLI is missing (common on servers/CI).
+# On a machine reached through VS Code Remote-SSH the CLI lives on the
+# workstation, not here: ~/.vscode-server is not a substitute, and the
+# extension set installs from the workstation's window instead (Extensions
+# panel → "Install in SSH: <host>").
 if ! command -v code >/dev/null 2>&1; then
   echo "WARN: 'code' CLI not found -- install VS Code (macOS cask in the Brewfile), then re-run: script/install"
+  if [ -d "$HOME/.vscode-server" ]; then
+    echo "WARN: this host is a VS Code Remote-SSH target -- install the extensions from the workstation's window instead"
+  fi
   exit 0
 fi
 
