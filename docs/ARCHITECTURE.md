@@ -64,18 +64,66 @@ syntax-highlighting → history-substring-search **last**, then its bindkeys),
    (absent on Linux), and the file is **hash-gated** (see below).
 2. Every `*/install.sh` in deterministic alphabetical topic order, each run
    from its own topic directory; a failure logs a WARN and does not stop the
-   others.
+   others. On Linux that includes the `local/` topic, which owns every tool
+   the install delivers (see below).
 
 `bin/dot` chains the three commands: `git pull --ff-only` (when a remote
 exists) → `script/bootstrap "$@"` → `script/install`.
 
+## The local layer (Linux userland)
+
+Everything the install delivers on Linux lands under `~/.local` — **no
+apt, no dnf, no sudo**. A Red Hat machine without root, an Ubuntu laptop,
+Debian and WSL all follow the same single path. macOS is the Brewfile's
+business; `local/install.sh` exits silently on Darwin. Four layers, in
+order, each with its own gate:
+
+1. **`local/manifest`** (gate `local-tools`) — the single-binary tools
+   (rg, fd, bat, eza, fzf, zoxide, delta, jq, starship, duf, dust,
+   shellcheck, ccache, ninja), each pinned to an exact upstream release
+   asset per architecture, installed into `~/.local/bin`. musl-static
+   picks wherever they exist, so glibc age does not matter.
+2. **`local/prefix.sh`** (gate `local-prefix`) — whole toolchain trees
+   under `~/.local/opt/<name>-<ver>` (cmake, the LLVM/clang suite), with
+   stable unversioned symlinks in `~/.local/bin` as the only interface —
+   the prefix directories never go on PATH. This is the userland
+   replacement for apt's `update-alternatives` clang unversioning. The
+   LLVM tarball is ~2 GB / ~6 GB installed; `DOTFILES_SKIP_LLVM=1` in
+   `~/.localrc` opts out.
+3. **nvm** (not gated; `~/.nvm` is the idempotency) — nodejs/npm, already
+   lazy-loaded by `zsh/env.zsh`.
+4. **`local/build.sh`** (gate `local-build`) — zsh and tmux from source,
+   *only* when the system copy is absent or older than the minimum
+   (zsh ≥ 5.8, tmux ≥ 3.2a — every targeted distro passes, so existing
+   machines never rebuild). Dependencies (pkgconf, ncurses, libevent) are
+   built **static** into `~/.local` on demand, so the resulting tmux/zsh
+   are self-contained and never need `LD_LIBRARY_PATH`.
+
+**Skip-if-present ladder** (shared, in `local/lib.sh`): our own
+`~/.local/bin/<name>` wins and is refreshed only when older than the pin
+(never downgraded); an acceptable system copy is kept as-is (the `min`
+column of the manifest — existing Ubuntu/RHEL machines re-download
+nothing); otherwise the pin is installed.
+
+**Prerequisite contract**: `git curl unzip xz tar python3` (and
+`gcc`/`make` for the source-build layer only) are checked and reported,
+never installed — the WARN text names the system package; this repo never
+runs sudo. `chsh` is likewise out of scope: tmux pins `default-shell`, and
+shells launch zsh from PATH, where `~/.local/bin` leads (zshenv).
+
+**xclip** is the one deliberate omission: X11 libraries are not
+userland-installable. tmux's copy-command cascade (pbcopy → clip.exe →
+xclip → xsel) keeps working with whatever the system provides.
+
 ## Hash-gates (script/gate.sh)
 
 Slow, side-effectful installers are wrapped in a gate: the sha256 of their
-input file is stored in `~/.local/state/dotfiles/gate-<key>/` after a
-successful run, and an unchanged input is skipped on the next run. Gated
-today: the `Brewfile` (key `brew`) and `apt/packages` (key `apt`); an
-overlay repo can add its own gates — see docs/OVERLAY.md.
+input file is stored as a flat file `~/.local/state/dotfiles/gate-<key>`
+after a successful run, and an unchanged input is skipped on the next run.
+Gated today: the `Brewfile` (key `brew`), `local/manifest` (`local-tools`),
+`local/prefix.sh` (`local-prefix`) and `local/build.sh` (`local-build` —
+for the local layer the pins live in the scripts, so the scripts are the
+gate inputs); an overlay repo can add its own gates — see docs/OVERLAY.md.
 
 The gate knows file contents, not script contents: after editing an
 installer itself, force a re-run with
@@ -86,8 +134,8 @@ installer itself, force a re-run with
 Everything machine-specific lives outside the repo:
 
 - `~/.localrc` (0600, never committed — see `zsh/localrc.example`): secrets,
-  feature flags (`DOTFILES_VCPKG=1`, `DOTFILES_SKIP_VSCODE_EXTENSIONS=1`),
-  compiler variance (`CC`/`CXX`).
+  feature flags (`DOTFILES_VCPKG=1`, `DOTFILES_SKIP_VSCODE_EXTENSIONS=1`,
+  `DOTFILES_SKIP_LLVM=1`), compiler variance (`CC`/`CXX`).
 - `~/.gitconfig.local`: identity (generated on first bootstrap) and
   per-machine git overrides.
 - A private overlay repo, if you keep one (see docs/OVERLAY.md): anything

@@ -28,8 +28,9 @@ and expect it to drift from this repo's version as either evolves.
 
 Keep the conventions: `script/` and `docs/` are never topics, everything else
 is. And **prefix your gate keys**: all gates — both layers — keep state in a
-single `~/.local/state/dotfiles/gate-<key>/` directory, and `brew`/`apt` are
-already taken. Note that the *Force everything to re-run* recipe in
+single `~/.local/state/dotfiles/gate-<key>` flat-file directory, and
+`brew`/`local-tools`/`local-prefix`/`local-build` are already taken. Note that
+the *Force everything to re-run* recipe in
 [MAINTENANCE.md](MAINTENANCE.md) resets that directory, both layers with it.
 
 ## Apply order
