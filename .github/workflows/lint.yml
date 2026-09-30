@@ -1,9 +1,13 @@
-# lint — three cheap gates on every push and pull request:
-#   1. gitleaks     : scan full history for leaked secrets
+# lint — four gates:
+#   1. gitleaks     : scan full history for leaked secrets (every push)
 #   2. shellcheck   : every sh/bash script in the repo (shebang-aware — some
 #                     restored 2016 scripts are ruby and are only parsed)
 #   3. smoke        : run the real bootstrap in an isolated fake $HOME and
 #                     assert the linking conventions, zsh syntax, tmux config
+#   4. linux-smoke  : the full userland install as a NON-ROOT user in
+#                     rockylinux:9 / ubuntu:24.04 containers — the real
+#                     acceptance test for the local/ layer (paths filter +
+#                     weekly: it downloads the ~2 GB LLVM tarball)
 #
 # No template-rendering job: this repo has no templates. What you see in a
 # topic file is exactly what lands in $HOME.
@@ -13,6 +17,8 @@ name: lint
 on:
   push:
   pull_request:
+  schedule:
+    - cron: "23 4 * * 1" # weekly, upstream pins can rot (assets move)
 
 permissions:
   contents: read
@@ -56,8 +62,7 @@ jobs:
                 echo "skip (non-shell): $f"
                 ;;
             esac
-          done < <(find script bin -type f -print0;
-                   find . -mindepth 2 -maxdepth 2 -name install.sh -not -path './.git/*' -print0)
+          done < <(find . -type f -not -path './.git/*' -print0)
           exit "$fail"
 
   smoke:
@@ -109,3 +114,42 @@ jobs:
           tmux -L ci -f /tmp/fakehome/.tmux.conf new-session -d
           tmux -L ci kill-server
           echo "tmux: config loaded clean"
+
+  # The acceptance test for the local/ layer: the complete userland install
+  # as a non-root user, on the two distro families we care about, plus a
+  # compiler-less leg proving the WARN-and-continue contract (that leg also
+  # skips LLVM — nothing would use it without a compiler anyway).
+  # The runner checks out; the distro runs via docker with the repo mounted
+  # read-only (container-jobs would need Node >= 20 inside each image for
+  # actions/checkout). The same command runs locally:
+  #   docker run --rm -v "$HOME/.dotfiles:/src:ro" rockylinux:9 \
+  #     bash /src/.github/ci/linux-smoke.sh
+  linux-smoke:
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: "rockylinux:9" # the RHEL 9 target, closest free proxy
+            with_compiler: "yes"
+          - image: "ubuntu:24.04" # doubles as the WSL proxy
+            with_compiler: "yes"
+          - image: "rockylinux:9"
+            with_compiler: "no" # no gcc/make: builds must WARN, not fail
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Userland install in ${{ matrix.image }} as a non-root user
+        run: |
+          set -euo pipefail
+          full="rg fd bat eza fzf zoxide delta duf dust jq shellcheck starship \
+                ccache ninja cmake clang clang++ clangd clang-format clang-tidy nvim zsh tmux"
+          tarballs="rg fd bat eza fzf zoxide delta duf dust jq shellcheck starship \
+                ccache ninja cmake nvim"
+          if [ "${{ matrix.with_compiler }}" = yes ]; then assert="$full"; else assert="$tarballs"; fi
+          docker run --rm \
+            -v "$PWD:/src:ro" \
+            -e WITH_COMPILER="${{ matrix.with_compiler }}" \
+            -e ASSERT_TOOLS="$assert" \
+            "${{ matrix.image }}" \
+            bash /src/.github/ci/linux-smoke.sh
