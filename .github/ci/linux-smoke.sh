@@ -25,13 +25,15 @@ echo "==> linux-smoke: $(grep PRETTY_NAME /etc/os-release | cut -d'"' -f2)"
 
 # --- Root phase: prerequisites + the unprivileged user --------------------------
 
-base="git curl unzip xz tar gzip python3 ca-certificates"
+base="git curl unzip tar gzip python3 ca-certificates"
 if command -v dnf >/dev/null 2>&1; then
-    dnf -y -q install $base
+    # --allowerasing: the base images ship curl-minimal, which conflicts
+    # with the plain curl package (it already provides /usr/bin/curl).
+    dnf -y -q --allowerasing install $base xz
     if [ "${WITH_COMPILER:-yes}" = yes ]; then dnf -y -q install gcc make; fi
 else
     apt-get update -qq
-    apt-get install -y -qq $base
+    apt-get install -y -qq $base xz-utils # on apt the xz package is xz-utils
     if [ "${WITH_COMPILER:-yes}" = yes ]; then apt-get install -y -qq build-essential; fi
 fi
 
