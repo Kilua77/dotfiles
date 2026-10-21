@@ -18,3 +18,5 @@ node_modules/
 # C/C++ object and dependency files
 *.o
 *.d
+
+**/.claude/settings.local.json
