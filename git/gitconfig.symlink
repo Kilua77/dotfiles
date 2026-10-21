@@ -88,3 +88,9 @@
     rank-contributors = !git-rank-contributors
     track = !git-track
     credit = !git-credit
+[credential "https://github.com"]
+	helper = 
+	helper = !/home/melouarr/.local/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = 
+	helper = !/home/melouarr/.local/bin/gh auth git-credential
