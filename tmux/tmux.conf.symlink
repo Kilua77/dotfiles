@@ -20,6 +20,20 @@ if-shell 'command -v pbcopy >/dev/null 2>&1' {
     }
 }
 
+# OSC 52 in both directions. The default (`external`) lets tmux set the
+# client clipboard for its own copies but silently drops OSC 52 emitted by
+# applications inside the panes. That matters here: TUIs that capture the
+# mouse (opencode, claude, nvim...) set mouse_any_flag, so a mouse drag
+# never enters tmux copy-mode (root MouseDrag1Pane sends -M to the app) —
+# the app's own OSC 52 is then the only copy path, and `external` kills it:
+# copies from TUI panes vanish while shell panes work ("new session is
+# fine, old ones are not" — old sessions run TUIs, fresh ones a shell).
+# `on` accepts the app sequence into a buffer AND forwards it to the client
+# terminal. No server clipboard tool exists (no root) and the X11 bridge is
+# untested, so OSC 52 over the VS Code Remote-SSH relay — verified working
+# via `tmux set-buffer -w` — is the only clipboard bridge on this host.
+set -s set-clipboard on
+
 # ── Terminal ────────────────────────────────────────────────────────────────
 set -g default-terminal "tmux-256color"
 set -ga terminal-overrides ",xterm-256color:Tc"
