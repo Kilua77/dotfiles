@@ -7,6 +7,10 @@
 #   2. every */install.sh in deterministic (alphabetical) topic order; a
 #      failing installer logs a WARN and does not stop the others
 #
+# With --root <dir> the same walk runs over a private layer (a directory
+# holding a layer.json — see docs/LAYERS.md): the layer's own Brewfile (gate
+# key <layer>/brew) and its topic installers. The hash gate stays shared.
+#
 # The run is narrated: the topic plan is printed up front, and a SUMMARY with
 # per-topic status (plus NEXT STEPS when something failed) closes it.
 #
@@ -14,9 +18,55 @@
 
 set -euo pipefail
 
-DOTFILES_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+usage() {
+  cat <<'EOF'
+usage: install [--root <dir>]
+
+  --root DIR  install the topics of DIR (a layer root with a layer.json)
+              instead of this repository
+EOF
+}
+
+ROOT_ARG=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --root)
+      [ $# -ge 2 ] || { printf 'install: --root needs a directory\n' >&2; exit 2; }
+      ROOT_ARG="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'install: unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+ENGINE_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+LABEL="public"
+if [ -n "$ROOT_ARG" ]; then
+  DOTFILES_ROOT="$(cd "$ROOT_ARG" 2>/dev/null && pwd -P)" || {
+    printf 'install: --root %s: no such directory\n' "$ROOT_ARG" >&2
+    exit 2
+  }
+  if [ "$DOTFILES_ROOT" != "$ENGINE_ROOT" ]; then
+    [ -f "$DOTFILES_ROOT/layer.json" ] || {
+      printf 'install: %s has no layer.json — not a layer root (docs/LAYERS.md)\n' "$DOTFILES_ROOT" >&2
+      exit 2
+    }
+    LABEL="$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([a-z][a-z0-9-]*\)".*/\1/p' \
+              "$DOTFILES_ROOT/layer.json" | head -n 1)"
+    [ -n "$LABEL" ] || {
+      printf 'install: no valid "name" in %s/layer.json\n' "$DOTFILES_ROOT" >&2
+      exit 2
+    }
+  fi
+else
+  DOTFILES_ROOT="$ENGINE_ROOT"
+fi
 # shellcheck source=/dev/null  # gate.sh is linted on its own
-. "$DOTFILES_ROOT/script/gate.sh"
+. "$ENGINE_ROOT/script/gate.sh"
+
+# A layer's Brewfile gates under its own key; the engine's historical
+# unprefixed "brew" key stays untouched so no machine re-runs its bundle.
+BREW_GATE_KEY="brew"
+[ "$DOTFILES_ROOT" != "$ENGINE_ROOT" ] && BREW_GATE_KEY="$LABEL/brew"
 
 status_topic=()  # parallel arrays: topic name -> ok / skipped / FAILED
 status_state=()
@@ -29,9 +79,9 @@ record() {  # record <topic> <state>
 # 1. Homebrew packages (macOS; the `brew` command is the guard).
 if command -v brew >/dev/null 2>&1 && [ -f "$DOTFILES_ROOT/Brewfile" ]; then
   echo '==> Brewfile'
-  if gate brew "$DOTFILES_ROOT/Brewfile"; then
+  if gate "$BREW_GATE_KEY" "$DOTFILES_ROOT/Brewfile"; then
     if brew bundle --file="$DOTFILES_ROOT/Brewfile"; then
-      gate_done brew "$DOTFILES_ROOT/Brewfile"
+      gate_done "$BREW_GATE_KEY" "$DOTFILES_ROOT/Brewfile"
       record brew ok
     else
       echo 'WARN: brew bundle failed (continuing)'
@@ -67,7 +117,7 @@ for installer in "${installers[@]}"; do
   # WARN lines can be counted for the summary (an installer that exits 0
   # with warnings is "ok (n warn)", not a plain "ok").
   warns=0
-  if (cd "$(dirname "$installer")" && ./install.sh) 2>&1 | tee "$log"; then
+  if (cd "$(dirname "$installer")" && LAYER_ROOT="$DOTFILES_ROOT" ./install.sh) 2>&1 | tee "$log"; then
     warns="$(grep -c '^WARN' "$log" || true)"
     if [ "${warns:-0}" -gt 0 ]; then
       record "$topic" "ok ($warns warn)"

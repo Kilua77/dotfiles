@@ -17,31 +17,65 @@
 #   --force    remove it, no backup (scripted re-runs, CI)
 #   --dry-run  print what would happen, touch nothing
 #
+# Layers: with --root <dir> the same rules apply to a private layer (a
+# directory holding a layer.json — see docs/LAYERS.md) instead of this
+# repository. The engine is this script; layers carry only topics.
+#
 # Symlink mechanics adapted from holman/dotfiles (MIT).
 
 set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: bootstrap [--force] [--dry-run]
+usage: bootstrap [--force] [--dry-run] [--root <dir>]
 
-  --force    replace conflicting targets without backing them up
-  --dry-run  print planned actions without touching anything
+  --force     replace conflicting targets without backing them up
+  --dry-run   print planned actions without touching anything
+  --root DIR  link the topics of DIR (a layer root with a layer.json)
+              instead of this repository — same rules, same output format
 EOF
 }
 
 FORCE=0
 DRY=0
-for arg in "$@"; do
-  case "$arg" in
-    --force) FORCE=1 ;;
-    --dry-run) DRY=1 ;;
+ROOT_ARG=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --force) FORCE=1; shift ;;
+    --dry-run) DRY=1; shift ;;
+    --root)
+      [ $# -ge 2 ] || { printf 'bootstrap: --root needs a directory\n' >&2; exit 2; }
+      ROOT_ARG="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
-    *) printf 'bootstrap: unknown option: %s\n' "$arg" >&2; usage >&2; exit 2 ;;
+    *) printf 'bootstrap: unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
-DOTFILES_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+ENGINE_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+LABEL="public"
+if [ -n "$ROOT_ARG" ]; then
+  DOTFILES_ROOT="$(cd "$ROOT_ARG" 2>/dev/null && pwd -P)" || {
+    printf 'bootstrap: --root %s: no such directory\n' "$ROOT_ARG" >&2
+    exit 2
+  }
+  if [ "$DOTFILES_ROOT" != "$ENGINE_ROOT" ]; then
+    [ -f "$DOTFILES_ROOT/layer.json" ] || {
+      printf 'bootstrap: %s has no layer.json — not a layer root (docs/LAYERS.md)\n' "$DOTFILES_ROOT" >&2
+      exit 2
+    }
+    # layer_label: the layer's declared name (gate keys, doctor prefixes).
+    # jq is not a bootstrap dependency — a sed probe is enough for the
+    # single-line layer.json the contract mandates.
+    LABEL="$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([a-z][a-z0-9-]*\)".*/\1/p' \
+              "$DOTFILES_ROOT/layer.json" | head -n 1)"
+    [ -n "$LABEL" ] || {
+      printf 'bootstrap: no valid "name" in %s/layer.json\n' "$DOTFILES_ROOT" >&2
+      exit 2
+    }
+  fi
+else
+  DOTFILES_ROOT="$ENGINE_ROOT"
+fi
 BACKUP_ROOT="$HOME/.dotfiles-backup"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 # Honor XDG_CONFIG_HOME, but only when it lives under $HOME — an inherited
@@ -150,8 +184,10 @@ done
 
 # Generate ~/.gitconfig.local on first run (identity + credential helper).
 # Without a tty (CI, scripted runs) this is skipped with a warning.
+# Identity is an engine concern: the example always comes from the engine
+# root, never from a layer.
 setup_gitconfig() {
-  example="$DOTFILES_ROOT/git/gitconfig.local.symlink.example"
+  example="$ENGINE_ROOT/git/gitconfig.local.symlink.example"
   target="$HOME/.gitconfig.local"
   [ -f "$example" ] || return 0
   [ -f "$target" ] && return 0
@@ -181,11 +217,14 @@ setup_gitconfig() {
   chmod 600 "$target"
   say "GENERATED $target"
 }
-setup_gitconfig
+# Identity generation is an engine concern: it runs for the engine's own
+# bootstrap only, never for a layer root.
+[ "$DOTFILES_ROOT" = "$ENGINE_ROOT" ] && setup_gitconfig
 
+if [ "$LABEL" = public ]; then tag="bootstrap"; else tag="bootstrap[$LABEL]"; fi
 if [ "$backed_up" -gt 0 ]; then
-  say "bootstrap: $linked linked, $skipped already ours, $backed_up backed up"
-  say "bootstrap: backups in $BACKUP_ROOT/$STAMP/"
+  say "$tag: $linked linked, $skipped already ours, $backed_up backed up"
+  say "$tag: backups in $BACKUP_ROOT/$STAMP/"
 else
-  say "bootstrap: $linked linked, $skipped already ours"
+  say "$tag: $linked linked, $skipped already ours"
 fi

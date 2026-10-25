@@ -115,6 +115,47 @@ jobs:
           tmux -L ci kill-server
           echo "tmux: config loaded clean"
 
+  # The layer engine, proven on a fixture layer end to end in a scratch
+  # HOME: registry, --root linking, install walker, guards. No private data
+  # anywhere near it — script/tests/layers-fixture is the layer.
+  layers-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fixture layer end to end in a scratch HOME
+        run: |
+          set -euo pipefail
+          export TESTHOME="$(mktemp -d)"
+          export HOME="$TESTHOME"
+          export XDG_CONFIG_HOME="$TESTHOME/.config"
+          tmp="$(mktemp -d)"
+          cp -R script/tests/layers-fixture "$tmp/fixture"
+          git -C "$tmp/fixture" init -q && git -C "$tmp/fixture" add -A
+          git -C "$tmp/fixture" -c user.email=ci@invalid -c user.name=ci commit -qm fixture
+
+          ./script/layers add "$tmp/fixture"
+          ./script/layers list | grep -q '^\[1\] fixture'
+          ./script/layers paths | grep -qx "$tmp/fixture"
+
+          ./script/bootstrap --root "$tmp/fixture" --dry-run | grep -q '^LINK'
+          [ ! -e "$TESTHOME/.homedot" ] # dry-run touched nothing
+          ./script/bootstrap --root "$tmp/fixture" --force
+          readlink "$TESTHOME/.homedot" | grep -q 'fixture/fixture/homedot\.symlink$'
+          ./script/bootstrap --root "$tmp/fixture" | grep -q '0 linked' # idempotent
+
+          ./script/install --root "$tmp/fixture" | grep -q 'fixture: install.sh ran'
+
+          mkdir -p "$tmp/notalayer"
+          if ./script/bootstrap --root "$tmp/notalayer" >/dev/null 2>&1; then
+            echo "FAIL: --root accepted a directory without layer.json"; exit 1
+          fi
+          if ./script/layers add "$tmp/fixture" >/dev/null 2>&1; then
+            echo "FAIL: duplicate layer registration accepted"; exit 1
+          fi
+          ./script/layers remove fixture
+          [ ! -s "$TESTHOME/.config/dotfiles/layers" ]
+          echo "layers-smoke: OK"
+
   # The acceptance test for the local/ layer: the complete userland install
   # as a non-root user, on the two distro families we care about, plus a
   # compiler-less leg proving the WARN-and-continue contract (that leg also

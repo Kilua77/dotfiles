@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+#
+# layers — register and inspect the private layer stack of this machine.
+#
+# A layer is a git repository conforming to docs/LAYERS.md (a layer.json +
+# topics, no script/). The stack is layer 0 (this repository, always first,
+# "public") followed by the registry lines in file order. The registry is
+# machine-local on purpose — which layers a machine runs is machine variance
+# and never enters a repository:
+#
+#   ${XDG_CONFIG_HOME:-~/.config}/dotfiles/layers
+#   one layer per line: <name> TAB <url-or-path> TAB <clone-path>
+#
+#   layers list              stack order, clone path, git state one-liner
+#   layers add <url|path> [name]
+#                            register; clones a url to ~/.dotfiles-<name>,
+#                            or registers an existing local layer directory
+#                            in place (fixture, migrated clone)
+#   layers remove <name>     unregister (the clone stays on disk)
+#   layers paths             every stack root in application order, public
+#                            first, one per line (comment lines start with #)
+#
+# The layer's name always comes from its layer.json; a [name] argument must
+# match it (a convenience typo guard, never an override).
+
+set -euo pipefail
+
+ENGINE_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+
+# Same XDG policy as bootstrap: honor the variable only under $HOME.
+LAYERS_CONFIG="$HOME/.config"
+if [ -n "${XDG_CONFIG_HOME:-}" ] && [ "${XDG_CONFIG_HOME#"$HOME"/}" != "${XDG_CONFIG_HOME}" ]; then
+  LAYERS_CONFIG="$XDG_CONFIG_HOME"
+fi
+LAYERS_FILE="$LAYERS_CONFIG/dotfiles/layers"
+
+usage() {
+  sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+  exit "${1:-0}"
+}
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'layers: %s\n' "$*" >&2; exit 2; }
+
+# layer_name <dir> — the declared name of a layer root (jq-free probe; the
+# contract mandates a single-line "name" in layer.json).
+layer_name() {
+  sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([a-z][a-z0-9-]*\)".*/\1/p' \
+    "$1/layer.json" | head -n 1
+}
+
+# registered <name> — prints the registry line, if any.
+registered() {
+  [ -f "$LAYERS_FILE" ] && awk -F '\t' -v n="$1" '$1 == n { print; exit }' "$LAYERS_FILE"
+}
+
+registry_paths() {
+  [ -f "$LAYERS_FILE" ] && awk -F '\t' '$3 != "" { print $3 }' "$LAYERS_FILE"
+}
+
+cmd_list() {
+  say "[0] public  $ENGINE_ROOT  ($(git -C "$ENGINE_ROOT" describe --always --dirty 2>/dev/null || echo 'not a git repo'))"
+  [ -f "$LAYERS_FILE" ] || { say 'layers: no layers registered — layers add <url>'; return 0; }
+  i=1
+  while IFS=$'\t' read -r name url path; do
+    [ -n "$name" ] || continue
+    if [ -n "$path" ] && [ -d "$path" ]; then
+      if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then state=dirty; else state=clean; fi
+      say "[$i] $name  $path  ($state)"
+    else
+      say "[$i] $name  (not cloned: $url)"
+    fi
+    i=$((i + 1))
+  done < "$LAYERS_FILE"
+}
+
+cmd_paths() {
+  say '# stack roots in application order — public first'
+  say "$ENGINE_ROOT"
+  [ -f "$LAYERS_FILE" ] || return 0
+  awk -F '\t' '$3 != "" { print $3 }' "$LAYERS_FILE"
+}
+
+cmd_add() {
+  [ "${1:-}" ] || usage 2
+  url="$1"
+  want_name="${2:-}"
+  [ -f "$LAYERS_FILE" ] || mkdir -p "$(dirname "$LAYERS_FILE")"
+
+  if [ -d "$url" ] && [ -f "$url/layer.json" ]; then
+    # Existing local layer directory (a fixture, or a migrated clone):
+    # register in place, no clone.
+    path="$(cd "$url" && pwd -P)"
+    name="$(layer_name "$path")" || true
+    [ -n "$name" ] || die "$path has a layer.json but no valid name"
+    [ -d "$path/.git" ] || die "$path is not a git repository (layers are git repos)"
+  else
+    # Clone into a staging dir under $HOME, read the name, then move into
+    # place — mv stays on the same filesystem.
+    staging="$(mktemp -d "$HOME/.dotfiles-clone-XXXXXX")"
+    trap 'rm -rf "$staging"' EXIT
+    git clone --quiet "$url" "$staging/layer" || die "git clone $url failed"
+    name="$(layer_name "$staging/layer")" || true
+    [ -n "$name" ] || die "cloned $url but found no layer.json with a valid name"
+    path="$HOME/.dotfiles-$name"
+    if [ -e "$path" ]; then die "$path already exists — pass it to 'layers add' to register it in place"; fi
+    mv "$staging/layer" "$path"
+    trap - EXIT
+    rmdir "$staging" 2>/dev/null || true
+  fi
+
+  if [ "$name" = public ]; then die "'public' is reserved for the engine repository"; fi
+  if [ -n "$want_name" ] && [ "$want_name" != "$name" ]; then
+    die "layer.json says '$name' but you asked for '$want_name' — the file is the truth"
+  fi
+  if [ -n "$(registered "$name")" ]; then die "a layer named '$name' is already registered (layers remove $name first)"; fi
+  if registry_paths | grep -qx "$path"; then die "$path is already registered under another name"; fi
+
+  printf '%s\t%s\t%s\n' "$name" "$url" "$path" >> "$LAYERS_FILE"
+  say "layers: registered [$name] $path"
+  say "layers: apply with: $ENGINE_ROOT/script/setup   (public first, then every layer)"
+}
+
+cmd_remove() {
+  [ "${1:-}" ] || usage 2
+  name="$1"
+  [ -f "$LAYERS_FILE" ] || die "nothing registered"
+  line="$(registered "$name")"
+  [ -n "$line" ] || die "no layer named '$name'"
+  tmp="$(mktemp)"
+  grep -vxF "$line" "$LAYERS_FILE" > "$tmp" || true
+  # An empty remainder means the last layer was the one removed.
+  if [ -s "$tmp" ]; then
+    mv "$tmp" "$LAYERS_FILE"
+  else
+    rm -f "$tmp"
+    : > "$LAYERS_FILE"
+  fi
+  say "layers: unregistered [$name]"
+  say "layers: the clone stays on disk — remove it by hand if you really want it gone"
+}
+
+case "${1:-}" in
+  list) shift; [ $# -eq 0 ] || die "list takes no arguments"; cmd_list ;;
+  paths) shift; [ $# -eq 0 ] || die "paths takes no arguments"; cmd_paths ;;
+  add) shift; cmd_add "$@" ;;
+  remove) shift; cmd_remove "$@" ;;
+  -h|--help|'') usage ;;
+  *) die "unknown command: $1 (list | add | remove | paths)" ;;
+esac
