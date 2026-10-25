@@ -21,6 +21,7 @@ equivalent, or is listed below with the reason it was dropped. Statuses:
 | Home/End/Delete/Ctrl-arrow bindkeys (2016) | `zsh/config.zsh` | PORTED | + darwin `\e[H`/`\e[F` variants |
 | antigen POST hooks: `fg=9` suggestions, substring-search arrows (2016) | `zsh/plugins.zsh` | PORTED | strict order: autosuggestions → syntax-highlighting → substring-search last |
 | antigen + `~/.antigenrc` (2016) | `zsh/install.sh` pinned clones + `zsh/plugins.zsh` | ADAPTED | no manager; drift auto-repaired |
+| oh-my-zsh completion library: `menu select`, typo correction, fuzzy matchers (2016) | `zsh/completion.zsh` — native zstyles | RESTORED | lost in the rebuild (only matcher-list + insert-tab had been ported); back on 2026-10-26, no plugin needed |
 | oh-my-zsh git plugin (2016) | `zsh/git-aliases.zsh` — 44 aliases | RESTORED | `gf` reserved for the personal function; fetch = `gfe` |
 | zsh-completions (2016) | `zsh/install.sh` pin 0.35.0, fpath-only | RESTORED | dropped by mistake in the chezmoi rewrite |
 | colored-man-pages (2016) | `zsh/plugins/colored-man-pages.plugin.zsh` | PORTED | vendored, sourced by tools.zsh |
