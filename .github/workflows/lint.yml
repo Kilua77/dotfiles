@@ -145,6 +145,24 @@ jobs:
 
           ./script/install --root "$tmp/fixture" | grep -q 'fixture: install.sh ran'
 
+          # audit: disjoint by construction, must be silent and green
+          ./script/audit
+
+          # doctor: the layer's check.sh hook runs under the layer prefix
+          ./script/doctor | grep -q '\[fixture\] ok: fixture'
+
+          # audit: a colliding layer must be reported
+          cp -R "$tmp/fixture" "$tmp/other"
+          printf '{"contract": 1, "name": "other"}\n' > "$tmp/other/layer.json"
+          git -C "$tmp/other" add -A
+          git -C "$tmp/other" -c user.email=ci@invalid -c user.name=ci commit -qm other
+          ./script/layers add "$tmp/other" >/dev/null
+          # audit exits 1 by design when it reports violations — capture first
+          collisions="$(./script/audit || true)"
+          printf '%s\n' "$collisions" | grep -q '\[fixture\].*\[other\].*homedot' \
+            || { echo "FAIL: collision not reported"; exit 1; }
+          ./script/layers remove other >/dev/null
+
           mkdir -p "$tmp/notalayer"
           if ./script/bootstrap --root "$tmp/notalayer" >/dev/null 2>&1; then
             echo "FAIL: --root accepted a directory without layer.json"; exit 1
@@ -155,6 +173,11 @@ jobs:
           ./script/layers remove fixture
           [ ! -s "$TESTHOME/.config/dotfiles/layers" ]
           echo "layers-smoke: OK"
+      - name: adopt merge regression suite (7 cases)
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq jq; }
+          bash script/tests/adopt-merge.bash
 
   # The acceptance test for the local/ layer: the complete userland install
   # as a non-root user, on the two distro families we care about, plus a

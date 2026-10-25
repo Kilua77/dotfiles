@@ -1,0 +1,232 @@
+#!/usr/bin/env bash
+#
+# doctor — post-install check over the whole layer stack: print what is in
+# place (ok) and what still needs action (TODO, with the exact fix), then
+# stop. Purely informational: it never changes anything and always exits 0.
+#
+# Per-layer lines are prefixed [public] / [<layer-name>]. Topic-specific
+# checks live in the layer that owns the topic, as <topic>/check.sh hooks —
+# the engine only checks what it owns: links, drift, the registry itself,
+# cross-layer disjointness, and the machine files it manages.
+#
+# Run it any time:
+#   ~/.dotfiles/script/doctor
+#
+# Secrets policy: variable NAMES are reported, never values.
+
+set -u
+
+ENGINE_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+
+# Machine flags (~/.localrc) drive the per-machine selection below; only
+# names are ever printed, never values.
+# shellcheck source=/dev/null  # user-local, by definition not in this repo
+if [ -f "$HOME/.localrc" ]; then . "$HOME/.localrc"; fi
+
+todos=0
+
+ok()   { printf 'doctor: ok   %s\n' "$*"; }
+todo() { printf 'doctor: TODO %s\n' "$*"; todos=$((todos + 1)); }
+note() { printf 'doctor: note %s\n' "$*"; }
+
+# --- the stack: engine root first, then registered layers in order ------------
+stack=("$ENGINE_ROOT")
+stack_names=(public)
+if [ -x "$ENGINE_ROOT/script/layers" ]; then
+  while IFS="$(printf '\t')" read -r lname lpath _lurl; do
+    [ -n "$lname" ] || continue
+    stack+=("$lpath")
+    stack_names+=("$lname")
+  done < <("$ENGINE_ROOT/script/layers" stack)
+fi
+
+layer_bootstrap() {  # layer_bootstrap <root> <args...>
+  root="$1"; shift
+  if [ "$root" = "$ENGINE_ROOT" ]; then
+    "$ENGINE_ROOT/script/bootstrap" "$@"
+  else
+    "$ENGINE_ROOT/script/bootstrap" --root "$root" "$@"
+  fi
+}
+
+# --- Registry sanity ------------------------------------------------------------
+# Every registered layer must exist on disk, be a git repo, declare a valid
+# contract the engine understands, and names must be unique.
+if [ -f "$HOME/.config/dotfiles/layers" ] || [ -n "${XDG_CONFIG_HOME:-}" ]; then
+  seen=''
+  while IFS="$(printf '\t')" read -r lname lpath _lurl; do
+    [ -n "$lname" ] || continue
+    case " $seen " in *" $lname "*)
+      todo "registry — duplicate layer name '$lname' in the layers file"
+      continue ;;
+    esac
+    seen="$seen $lname"
+    if [ ! -d "$lpath" ]; then
+      todo "registry — [$lname] registered at $lpath but not on disk; run: $ENGINE_ROOT/script/setup"
+    elif [ ! -d "$lpath/.git" ]; then
+      todo "registry — [$lname] at $lpath is not a git repository"
+    elif [ ! -f "$lpath/layer.json" ]; then
+      todo "registry — [$lname] at $lpath has no layer.json"
+    elif command -v jq >/dev/null 2>&1 \
+         && [ "$(jq -r '.contract // 1' "$lpath/layer.json" 2>/dev/null || echo 1)" -gt 1 ] 2>/dev/null; then
+      todo "registry — [$lname] needs a newer contract; update the engine (git -C $ENGINE_ROOT pull)"
+    fi
+  done < <("$ENGINE_ROOT/script/layers" stack)
+fi
+
+# --- Per layer: links applied + uncommitted drift -------------------------------
+i=0
+for root in "${stack[@]}"; do
+  label="${stack_names[$i]}"
+
+  # bootstrap --dry-run prints OK for linked targets and LINK/BACKUP/REPLACE
+  # for anything it would still change — zero of those means fully applied.
+  plan="$(layer_bootstrap "$root" --dry-run 2>/dev/null || true)"
+  pending="$(printf '%s\n' "$plan" | grep -E '^(LINK|BACKUP|REPLACE)' || true)"
+  # Skills skipped on purpose (DOTFILES_SKIP_SKILLS) are unlinked by design —
+  # they must not surface as pending links.
+  for _skill in ${DOTFILES_SKIP_SKILLS:-}; do
+    pending="$(printf '%s\n' "$pending" \
+               | grep -v -- "-> $HOME/.claude/skills/$_skill\$" | grep -v '^$' || true)"
+  done
+  if [ -z "$pending" ]; then
+    ok "[$label] links — every target already points into the layer"
+  else
+    todo "[$label] links — target(s) below not linked yet; run: $ENGINE_ROOT/script/setup"
+    printf '%s\n' "$pending" | sed 's/^/doctor:      /'
+  fi
+
+  # Drift: uncommitted live edits through the symlinks — legitimate workflow
+  # (the app rewrites its own settings) — surfaced, not flagged: review, then
+  # keep (commit) or reject (checkout).
+  if command -v git >/dev/null 2>&1 \
+     && git -C "$root" rev-parse --git-dir >/dev/null 2>&1; then
+    if [ -n "$(git -C "$root" status --porcelain 2>/dev/null || true)" ]; then
+      note "[$label] drift — uncommitted changes (live edits through the symlinks)"
+      note "[$label] drift     review:  git -C $root diff"
+      note "[$label] drift     keep:    git -C $root add -A && git -C $root commit"
+    fi
+  fi
+
+  # Legacy leftover: a layer must not carry its own script/ (engine owns
+  # mechanism — pre-contract copies drift, and one of them already has).
+  if [ "$root" != "$ENGINE_ROOT" ] && [ -d "$root/script" ]; then
+    note "[$label] carries a script/ directory — engine-owned since the layer contract; safe to delete"
+  fi
+
+  i=$((i + 1))
+done
+
+if [ -n "${DOTFILES_SKIP_SKILLS:-}" ]; then
+  note "skills — skipped on this machine: ${DOTFILES_SKIP_SKILLS}"
+fi
+
+# --- Cross-layer disjointness ----------------------------------------------------
+# Two layers resolving to the same $HOME target is the one hard collision in
+# the model — later layers would silently win. audit prints each violation.
+if [ -x "$ENGINE_ROOT/script/audit" ]; then
+  collisions="$("$ENGINE_ROOT/script/audit" 2>/dev/null || true)"
+  if [ -z "$collisions" ]; then
+    ok 'audit — layer targets are pairwise disjoint'
+  else
+    todo 'audit — layers resolve to the SAME target(s) under the home directory:'
+    printf '%s\n' "$collisions" | sed 's/^/doctor:      /'
+  fi
+fi
+
+# --- ~/.claude/settings.json: a real machine file, policy-merged at install ----
+# Never a symlink: plugins and preferences live here, machine-local. A layer
+# shipping claude/home/.claude/settings.json merges its policy keys into it.
+if [ -L "$HOME/.claude/settings.json" ]; then
+  todo "settings — ~/.claude/settings.json is still a symlink; run: $ENGINE_ROOT/script/setup"
+elif [ -f "$HOME/.claude/settings.json" ]; then
+  ok 'settings — real machine file (policy merged at install; plugins stay local)'
+else
+  todo "settings — ~/.claude/settings.json missing; run: $ENGINE_ROOT/script/setup"
+fi
+
+# --- ~/.localrc: present, real values (names only, never values) ----------------
+# Expected MCP URL variables follow the per-machine selection: a server
+# deselected via DOTFILES_MCP_SERVERS needs no URL on this machine.
+LOCALRC_VARS='ZAI_API_KEY'
+for _s in ${DOTFILES_MCP_SERVERS:-}; do
+  LOCALRC_VARS="$LOCALRC_VARS $(printf '%s' "$_s" | tr '[:lower:]' '[:upper:]' | tr -cd '[:alnum:]')_MCP_URL"
+done
+if [ ! -f "$HOME/.localrc" ]; then
+  todo 'localrc — ~/.localrc missing; it is seeded by the claude topic installer via:'
+  todo "localrc     $ENGINE_ROOT/script/setup   (or copy the layer's claude/localrc.example)"
+else
+  if [ -n "$LOCALRC_VARS" ]; then
+    before=$todos
+    for var in $LOCALRC_VARS; do
+      # Last assignment wins, like a shell sourcing the file.
+      line="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${var}=" "$HOME/.localrc" 2>/dev/null | tail -n 1 || true)"
+      if [ -z "$line" ]; then
+        todo "localrc — ${var} not set; add to ~/.localrc: export ${var}='…'"
+      elif printf '%s' "$line" | grep -Eq 'example\.invalid|CHANGE-ME'; then
+        todo "localrc — ${var} still the skeleton placeholder; put the real value in ~/.localrc"
+      fi
+    done
+    [ "$todos" -eq "$before" ] && ok 'localrc — all expected variables are set'
+  fi
+
+  # Informational: the file holds secrets; flag group/other write access.
+  mode="$(stat -c %a "$HOME/.localrc" 2>/dev/null || stat -f %Lp "$HOME/.localrc" 2>/dev/null || echo '?')"
+  case "$mode" in
+    *[2367]) note "localrc — mode $mode is too permissive for a secrets file; chmod 600 ~/.localrc" ;;
+  esac
+fi
+
+# --- MCP: are the WANTED servers registered (user scope)? -----------------------
+# The wanted set comes from the machine selection (DOTFILES_MCP_SERVERS) over
+# the manifest union; without manifests the flag alone drives the check.
+if command -v claude >/dev/null 2>&1; then
+  if command -v timeout >/dev/null 2>&1; then
+    mcp_list="$(timeout 15 claude mcp list 2>/dev/null || true)"
+  else
+    mcp_list="$(claude mcp list 2>/dev/null || true)"
+  fi
+  wanted="${DOTFILES_MCP_SERVERS:-}"
+  if [ -n "$wanted" ]; then
+    before=$todos
+    for server in $wanted; do
+      printf '%s\n' "$mcp_list" | grep -q "$server" \
+        || todo "mcp — server '$server' wanted but not registered; configure ~/.localrc then re-run script/setup"
+    done
+    [ "$todos" -eq "$before" ] \
+      && ok "mcp — wanted server(s) registered: $wanted (visible in NEW sessions; /mcp to connect)"
+  else
+    note 'mcp — no DOTFILES_MCP_SERVERS selection on this machine'
+  fi
+else
+  note "mcp — 'claude' CLI not found, registration check skipped"
+fi
+
+# --- Topic check hooks ------------------------------------------------------------
+# Each layer may carry <topic>/check.sh (ok:/TODO:/note: lines, exit 0
+# always). They run with cwd = the topic dir and LAYER_ROOT exported, and
+# their output is passed through under the layer's prefix.
+i=0
+for root in "${stack[@]}"; do
+  label="${stack_names[$i]}"
+  if [ "$root" != "$ENGINE_ROOT" ]; then
+    while IFS= read -r check; do
+      [ -n "$check" ] || continue
+      (cd "$(dirname "$check")" && LAYER_ROOT="$root" ./check.sh) 2>/dev/null \
+        | sed -e "s/^ok:/[$label] ok:/" -e "s/^TODO:/[$label] TODO:/" -e "s/^note:/[$label] note:/" \
+        | sed 's/^/doctor: /' || true
+    done < <(find "$root" -mindepth 2 -maxdepth 2 -name check.sh \
+              -not -path '*/.git/*' -not -path '*/script/*' 2>/dev/null | sort)
+  fi
+  i=$((i + 1))
+done
+
+# --- Wrap-up ----------------------------------------------------------------------
+echo
+if [ "$todos" -eq 0 ]; then
+  echo 'doctor: all checks passed — the whole stack is fully applied.'
+else
+  echo "doctor: $todos item(s) need action (see TODO lines above)."
+  echo "doctor: fix them, then re-run: $ENGINE_ROOT/script/doctor"
+fi
+exit 0

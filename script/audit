@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+#
+# audit — pairwise disjointness of every layer's resolved $HOME targets.
+#
+# The one hard collision in the layer model is two layers resolving to the
+# same link target: the later apply silently wins. For every pair of stack
+# roots (engine first, then registered layers in order) the sets of targets
+# — the dst column of bootstrap --dry-run's OK/LINK lines — must not
+# intersect. This generalizes the two-repo `comm -12` audit of
+# docs/OVERLAY.md to N layers.
+#
+# Silence is success: any output line is a violation, and the exit code is
+# 1 then, 0 otherwise. doctor surfaces the same result as a TODO.
+
+set -u
+
+ENGINE_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+
+stack=("$ENGINE_ROOT")
+stack_names=(public)
+if [ -x "$ENGINE_ROOT/script/layers" ]; then
+  while IFS="$(printf '\t')" read -r lname lpath _lurl; do
+    [ -n "$lname" ] || continue
+    stack+=("$lpath")
+    stack_names+=("$lname")
+  done < <("$ENGINE_ROOT/script/layers" stack)
+fi
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+# Per root: the dst column of the bootstrap plan (OK <dst> for already
+# ours, LINK <src> -> <dst> for planned links — both are intended targets).
+i=0
+for root in "${stack[@]}"; do
+  label="${stack_names[$i]}"
+  if [ "$root" = "$ENGINE_ROOT" ]; then
+    plan="$("$ENGINE_ROOT/script/bootstrap" --dry-run 2>/dev/null || true)"
+  else
+    plan="$("$ENGINE_ROOT/script/bootstrap" --root "$root" --dry-run 2>/dev/null || true)"
+  fi
+  printf '%s\n' "$plan" | awk '
+    /^OK[[:space:]]+/   { sub(/^OK[[:space:]]+/, ""); print }
+    /^LINK[[:space:]]+/ { split(substr($0, 11), a, " -> "); print a[2] }
+  ' | sort -u > "$tmp/$label.targets"
+  i=$((i + 1))
+done
+
+violations=0
+n="${#stack_names[@]}"
+for ((a = 0; a < n; a++)); do
+  for ((b = a + 1; b < n; b++)); do
+    la="${stack_names[$a]}"; lb="${stack_names[$b]}"
+    while IFS= read -r hit; do
+      [ -n "$hit" ] || continue
+      printf 'audit: [%s] ∩ [%s]: %s\n' "$la" "$lb" "$hit"
+      violations=$((violations + 1))
+    done < <(comm -12 "$tmp/$la.targets" "$tmp/$lb.targets")
+  done
+done
+
+[ "$violations" -eq 0 ] && exit 0
+exit 1

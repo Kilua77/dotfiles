@@ -81,6 +81,14 @@ cmd_paths() {
   awk -F '\t' '$3 != "" { print $3 }' "$LAYERS_FILE"
 }
 
+# cmd_stack — the registry verbatim, machine-readable: one line per layer,
+# name TAB path TAB url (public is NOT included). Consumed by setup, doctor
+# and audit; those prepend the engine root themselves.
+cmd_stack() {
+  [ -f "$LAYERS_FILE" ] || return 0
+  awk -F '\t' 'NF >= 2 { print $1 "\t" $3 "\t" $2 }' "$LAYERS_FILE"
+}
+
 cmd_add() {
   [ "${1:-}" ] || usage 2
   url="$1"
@@ -143,8 +151,9 @@ cmd_remove() {
 case "${1:-}" in
   list) shift; [ $# -eq 0 ] || die "list takes no arguments"; cmd_list ;;
   paths) shift; [ $# -eq 0 ] || die "paths takes no arguments"; cmd_paths ;;
+  stack) shift; [ $# -eq 0 ] || die "stack takes no arguments"; cmd_stack ;;
   add) shift; cmd_add "$@" ;;
   remove) shift; cmd_remove "$@" ;;
   -h|--help|'') usage ;;
-  *) die "unknown command: $1 (list | add | remove | paths)" ;;
+  *) die "unknown command: $1 (list | add | remove | paths | stack)" ;;
 esac

@@ -1,18 +1,49 @@
 #!/bin/sh
 #
-# dot — update everything: pull, relink, reinstall.
+# dot — update the whole stack: pull, relink, reinstall, every layer.
 # Any argument is passed through to script/bootstrap (--force, --dry-run).
+#
+# With DOTFILES=<path> dot updates that one layer only (deprecated: the
+# stack lives in ~/.config/dotfiles/layers now; plain `dot` handles all).
 
 set -eu
 
-DOTFILES="${DOTFILES:-$HOME/.dotfiles}"
-cd "$DOTFILES"
+ENGINE="${ENGINE:-$HOME/.dotfiles}"
+cd "$ENGINE"
+
+# Legacy single-layer mode: DOTFILES pointed at one overlay repo.
+if [ -n "${DOTFILES:-}" ] && [ "$DOTFILES" != "$ENGINE" ] && [ -d "$DOTFILES" ]; then
+  echo "dot: DOTFILES=$DOTFILES is deprecated — layers are registered with script/layers now"
+  if git -C "$DOTFILES" remote | grep -q .; then
+    git -C "$DOTFILES" pull --ff-only || echo 'WARN: git pull failed (offline?) — continuing'
+  fi
+  "$ENGINE/script/bootstrap" --root "$DOTFILES" "$@"
+  "$ENGINE/script/install" --root "$DOTFILES"
+  echo 'dot: done (single layer) — restart your shell if zsh files changed'
+  exit 0
+fi
 
 if [ -n "$(git remote)" ]; then
   git pull --ff-only || echo 'WARN: git pull failed (offline?) — continuing'
 fi
 
-"$DOTFILES/script/bootstrap" "$@"
-"$DOTFILES/script/install"
+"$ENGINE/script/bootstrap" "$@"
+"$ENGINE/script/install"
+
+# Registered layers, in stack order.
+if command -v awk >/dev/null 2>&1 && [ -x "$ENGINE/script/layers" ]; then
+  "$ENGINE/script/layers" stack | while IFS="$(printf '\t')" read -r name path _url; do
+    [ -n "$name" ] || continue
+    [ -d "$path" ] || continue
+    echo "--- dot: [$name] $path"
+    if git -C "$path" remote | grep -q .; then
+      git -C "$path" pull --ff-only || echo "WARN: [$name] git pull failed (offline?) — continuing"
+    fi
+    "$ENGINE/script/bootstrap" --root "$path" "$@"
+    "$ENGINE/script/install" --root "$path"
+  done
+fi
+
+"$ENGINE/script/doctor" || true
 
 echo 'dot: done — restart your shell if zsh files changed'

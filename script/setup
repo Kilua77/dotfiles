@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+#
+# setup — the guided one-command apply of the whole layer stack:
+#
+#   [1] prerequisites — git (required), claude / code CLIs (optional)
+#   [2] clone         — any registered layer missing on disk
+#   [3] adopt + link  — per root in stack order (engine first): adopt
+#                       reconciles drifted live files (interactive
+#                       merge/keep prompts; report-only without a tty),
+#                       then bootstrap links. A headless run (no tty, no
+#                       ADOPT_ANSWER) STOPS per root instead of
+#                       overwriting a drifted live file.
+#   [4] install       — per root: Brewfile + topic installers
+#   [5] check         — doctor over the whole stack
+#
+#   setup [--dry-run] [--force] [--layer <url>]... [--only <name>]
+#
+#   --layer URL   register the layer (clone + registry), then apply — the
+#                 fresh-machine one-shot: setup --layer <private-url>
+#   --only NAME   restrict the run to the engine + that one layer
+#
+# Idempotent: safe to re-run as often as you like — that is also the update
+# path (bin/dot does it for you: pull, relink, reinstall, every layer).
+
+set -euo pipefail
+
+ENGINE_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+
+DRY=0
+BOOTOPTS=()
+LAYER_URLS=()
+ONLY=''
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY=1; BOOTOPTS+=("$1"); shift ;;
+    --force)   BOOTOPTS+=("$1"); shift ;;
+    --layer)
+      [ $# -ge 2 ] || { printf 'setup: --layer needs a url\n' >&2; exit 2; }
+      LAYER_URLS+=("$2"); shift 2 ;;
+    --only)
+      [ $# -ge 2 ] || { printf 'setup: --only needs a layer name\n' >&2; exit 2; }
+      ONLY="$2"; shift 2 ;;
+    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) printf 'setup: unknown option: %s\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+phase() { printf '\n=== [%s] %s — %s\n' "$1" "$2" "$3"; }
+
+layer_label() {  # layer_label <root> — public for the engine, else layer name
+  if [ "$1" = "$ENGINE_ROOT" ]; then echo public; return 0; fi
+  sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([a-z][a-z0-9-]*\)".*/\1/p' \
+    "$1/layer.json" | head -n 1
+}
+
+layer_bootstrap() {  # layer_bootstrap <root> <args...>
+  root="$1"; shift
+  if [ "$root" = "$ENGINE_ROOT" ]; then
+    "$ENGINE_ROOT/script/bootstrap" "$@"
+  else
+    "$ENGINE_ROOT/script/bootstrap" --root "$root" "$@"
+  fi
+}
+
+# --- [1] prerequisites --------------------------------------------------------
+phase 1 prerequisites 'required tools'
+if ! command -v git >/dev/null 2>&1; then
+  echo 'setup: git is required and was not found — aborting'
+  exit 1
+fi
+for tool in claude code jq; do
+  if command -v "$tool" >/dev/null 2>&1; then
+    echo "prereq: $tool found"
+  else
+    case "$tool" in
+      jq) echo "prereq: WARN 'jq' not found — adopt merges and claude-sync degrade" ;;
+      *)   echo "prereq: WARN '$tool' not found — related installers will no-op (install it, then re-run setup)" ;;
+    esac
+  fi
+done
+
+# --- register --layer urls first, so the stack read below includes them -------
+for url in ${LAYER_URLS+"${LAYER_URLS[@]}"}; do
+  "$ENGINE_ROOT/script/layers" add "$url"
+done
+
+# --- the stack: engine root first, then registered layers in order ------------
+stack=("$ENGINE_ROOT")
+stack_names=(public)
+while IFS="$(printf '\t')" read -r lname lpath lurl; do
+  [ -n "$lname" ] || continue
+  if [ -n "$ONLY" ] && [ "$lname" != "$ONLY" ]; then continue; fi
+  stack+=("$lpath")
+  stack_names+=("$lname")
+done < <("$ENGINE_ROOT/script/layers" stack)
+
+# --- [2] clone ----------------------------------------------------------------
+phase 2 clone 'registered layers missing on disk'
+if [ "${#stack[@]}" -eq 1 ]; then
+  echo 'clone:   no layers registered (script/layers add <url> to add one)'
+else
+  cloned=0
+  while IFS="$(printf '\t')" read -r lname lpath lurl; do
+    [ -n "$lname" ] || continue
+    if [ -n "$ONLY" ] && [ "$lname" != "$ONLY" ]; then continue; fi
+    if [ -d "$lpath" ]; then
+      echo "clone:   [$lname] present at $lpath"
+    elif [ "$DRY" -eq 1 ]; then
+      echo "clone:   [$lname] WOULD clone $lurl -> $lpath"
+    else
+      git clone "$lurl" "$lpath"
+      cloned=$((cloned + 1))
+    fi
+  done < <("$ENGINE_ROOT/script/layers" stack)
+  [ "$cloned" -gt 0 ] && echo "clone:   $cloned layer(s) cloned"
+fi
+
+# --- [3] adopt + link, per root in stack order --------------------------------
+phase 3 'adopt + link' 'reconcile drifted live files, then relink targets'
+i=0
+for root in "${stack[@]}"; do
+  label="${stack_names[$i]}"
+  echo "--- [$label] ${root#"$HOME"/}"
+  if [ "$DRY" -eq 1 ]; then
+    echo 'adopt:   skipped (--dry-run)'
+  else
+    if [ "$root" = "$ENGINE_ROOT" ]; then
+      "$ENGINE_ROOT/script/adopt"
+    else
+      "$ENGINE_ROOT/script/adopt" "$root"
+    fi
+  fi
+  # Loss guard: a headless run (no tty, no explicit ADOPT_ANSWER) must never
+  # silently revert machine state. If bootstrap would BACKUP/REPLACE an
+  # existing target — a live file the layer does not own, typically drift
+  # from an app whose atomic save broke its symlink (Karabiner does this) —
+  # stop and demand an explicit reconciliation instead of overwriting it.
+  if [ "$DRY" -eq 0 ] && [ ! -t 0 ] && [ -z "${ADOPT_ANSWER:-}" ]; then
+    clobber="$(layer_bootstrap "$root" --dry-run 2>/dev/null | grep -E '^(BACKUP|REPLACE)' || true)"
+    if [ -n "$clobber" ]; then
+      echo "setup: STOP — the link phase for [$label] would replace drifted live file(s):"
+      printf '%s\n' "$clobber" | sed 's/^/setup:      /'
+      cat <<HINT
+setup:      Nothing was changed. Reconcile the drift, then re-run setup:
+setup:        - interactive:  script/setup from a terminal (adopt offers merge/keep)
+setup:        - scripted:     ADOPT_ANSWER=m script/setup  (JSON deep merge — NOT for karabiner.json)
+setup:        - keep live:    ADOPT_ANSWER=k script/setup  (repo adopts the live file verbatim; right choice for karabiner.json)
+setup:        - keep repo:    ADOPT_ANSWER=r script/setup  (live backed up first, repo wins)
+HINT
+      exit 1
+    fi
+  fi
+  layer_bootstrap "$root" ${BOOTOPTS+"${BOOTOPTS[@]}"}
+  i=$((i + 1))
+done
+
+# --- [4] install, per root ----------------------------------------------------
+phase 4 install 'per root: Brewfile + topic installers'
+i=0
+for root in "${stack[@]}"; do
+  echo "--- [${stack_names[$i]}] install"
+  if [ "$DRY" -eq 1 ]; then
+    echo 'install: skipped (--dry-run)'
+  elif [ "$root" = "$ENGINE_ROOT" ]; then
+    "$ENGINE_ROOT/script/install"
+  else
+    "$ENGINE_ROOT/script/install" --root "$root"
+  fi
+  i=$((i + 1))
+done
+
+# --- [5] check -----------------------------------------------------------------
+phase 5 check 'post-install state and remaining actions (whole stack)'
+if [ "$DRY" -eq 1 ]; then
+  echo 'check:   skipped (--dry-run)'
+else
+  "$ENGINE_ROOT/script/doctor"
+fi
+
+# --- Wrap-up ----------------------------------------------------------------------
+echo
+echo 'setup: done. Safe to re-run any time (idempotent). Later updates: bin/dot'
+echo 'setup: restart your shell if zsh or Claude files changed — MCP servers'
+echo 'setup: only appear in NEW Claude Code sessions (connect them with /mcp).'

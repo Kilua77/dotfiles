@@ -1,0 +1,333 @@
+#!/usr/bin/env bash
+#
+# adopt — reconcile pre-existing files with a layer root BEFORE linking.
+#
+#   adopt [<layer-root>]     default: the engine repository itself
+#
+# First apply on a machine that already runs Claude Code (or VS Code): the
+# live ~/.claude/settings.json has real state (chosen model, plugin toggles,
+# granted permissions), the repo version has its own, and neither is a
+# superset. bootstrap would silently back the live file up and link the repo
+# version — adopt surfaces each conflict first and offers:
+#
+#   [m] merge      (default for JSON) deep merge via jq: objects merged
+#                  recursively, live wins scalar conflicts, repo-only keys
+#                  kept, live-only keys added. Scalar arrays union and
+#                  dedup; object arrays merge BY IDENTITY (first shared key
+#                  among name/description/id/from) — repo order kept,
+#                  same-key entries folded (self-heals duplicates stacked
+#                  by an earlier union), live-only entries appended.
+#                  Written into the REPO file — the live file stays
+#                  untouched until bootstrap backs it up.
+#   [k] keep live  (default otherwise, and always for */karabiner.json —
+#                  the live file is written by the app itself and is the
+#                  whole truth; a merge would silently revert live edits)
+#                  the repo adopts the machine file verbatim.
+#   [r] keep repo  no-op — bootstrap will back the live file up as-is.
+#   [d] diff       inspect before deciding.
+#
+# Directory targets (e.g. a skills dir) are unioned without clobbering
+# (cp -an): machine-only entries enter the repo, repo versions stay
+# authoritative for shared names — no prompt needed.
+#
+# Prompting happens only on a tty; without one adopt is report-only.
+# ADOPT_ANSWER=m|k|r forces an answer for scripted runs (CI, tests).
+# adopt never writes outside the layer root, never removes anything,
+# always exits 0. bootstrap itself is untouched.
+
+set -u
+
+ENGINE_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+LABEL="public"
+if [ -n "${1:-}" ]; then
+  ROOT="$(cd "$1" 2>/dev/null && pwd -P)" || {
+    echo "adopt: $1: no such directory" >&2
+    exit 0
+  }
+  if [ "$ROOT" != "$ENGINE_ROOT" ]; then
+    [ -f "$ROOT/layer.json" ] || {
+      echo "adopt: $ROOT has no layer.json — not a layer root (docs/LAYERS.md)" >&2
+      exit 0
+    }
+    LABEL="$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([a-z][a-z0-9-]*\)".*/\1/p' \
+              "$ROOT/layer.json" | head -n 1)"
+    [ -n "$LABEL" ] || { echo "adopt: no valid name in $ROOT/layer.json" >&2; exit 0; }
+  fi
+else
+  ROOT="$ENGINE_ROOT"
+fi
+if [ "$LABEL" = public ]; then tag='adopt'; else tag="adopt[$LABEL]"; fi
+
+INTERACTIVE=0
+case "${ADOPT_ANSWER:-}" in
+  m | k | r) ;;
+  '')
+    [ -t 0 ] && INTERACTIVE=1
+    ;;
+  *)
+    echo "$tag: invalid ADOPT_ANSWER '${ADOPT_ANSWER}' (use m, k or r)" >&2
+    exit 0
+    ;;
+esac
+
+ok()   { printf '%s: %s\n' "$tag" "$*"; }
+warn() { printf '%s: WARN %s\n' "$tag" "$*"; }
+
+# bootstrap for the layer root — the ENGINE's bootstrap, pointed at it.
+layer_bootstrap() {
+  if [ "$ROOT" = "$ENGINE_ROOT" ]; then
+    "$ENGINE_ROOT/script/bootstrap" "$@"
+  else
+    "$ENGINE_ROOT/script/bootstrap" --root "$ROOT" "$@"
+  fi
+}
+
+# --- Drift pairs, straight from the bootstrap plan ----------------------------
+# The dry-run prints "BACKUP    <dst> -> <backup>" exactly for targets that
+# exist and conflict, and "LINK      <src> -> <dst>" for everything it would
+# link — joining both on dst yields the (src, dst) pairs worth reconciling.
+plan="$(layer_bootstrap --dry-run 2>/dev/null || true)"
+pairs="$(printf '%s\n' "$plan" | awk '
+  /^LINK[[:space:]]+/    { split(substr($0, 11), a, " -> "); link_src[a[2]] = a[1] }
+  /^BACKUP[[:space:]]+/  { split(substr($0, 11), a, " -> "); backup_dst[a[1]] = 1 }
+  END {
+    for (d in backup_dst) if (d in link_src) print link_src[d] "\t" d
+  }')"
+
+# --- Stale repo dir-links from an older layout ---------------------------------
+# A whole-directory link from an older layout may still sit where per-entry
+# targets now go: invisible in the BACKUP/LINK pairs, and bootstrap would
+# die on mkdir -p through the broken link. Walk the ancestors of every
+# planned target; a BROKEN link into this layer root is removed (its content
+# lives here), a broken foreign one is flagged.
+link_dsts="$(printf '%s\n' "$plan" | awk '
+  /^LINK[[:space:]]+/ { split(substr($0, 11), a, " -> "); print a[2] }')"
+printf '%s\n' "$link_dsts" | sort -u | while IFS= read -r dst; do
+  [ -n "$dst" ] || continue
+  d="$dst"
+  while [ "$d" != "$HOME" ] && [ "$d" != "/" ]; do
+    d="$(dirname "$d")"
+    if [ -L "$d" ] && [ ! -e "$d" ]; then
+      case "$(readlink "$d")" in
+        "$ROOT"/*)
+          rm "$d"
+          printf '%s: removed stale repo dir-link at %s (layout changed; bootstrap relinks)\n' "$tag" "${d#"$HOME"/}"
+          ;;
+        *)
+          printf '%s: WARN %s is a broken non-repo symlink — remove it before bootstrap\n' "$tag" "$d"
+          ;;
+      esac
+      break
+    fi
+  done
+done
+
+if [ -z "$pairs" ]; then
+  ok 'no pre-existing files to reconcile'
+  exit 0
+fi
+
+# --- Helpers -------------------------------------------------------------------
+is_json_object() {  # both files parse as JSON objects
+  command -v jq >/dev/null 2>&1 || return 1
+  jq -e 'type == "object"' "$1" >/dev/null 2>&1 \
+    && jq -e 'type == "object"' "$2" >/dev/null 2>&1
+}
+
+json_summary() {  # key-level drift overview: only-live / only-repo keys
+  only_live="$(comm -13 <(jq -rS 'paths(scalars) | join(".")' "$1" | sort) \
+                      <(jq -rS 'paths(scalars) | join(".")' "$2" | sort) | head -n 5 | paste -sd, -)"
+  only_repo="$(comm -23 <(jq -rS 'paths(scalars) | join(".")' "$1" | sort) \
+                      <(jq -rS 'paths(scalars) | join(".")' "$2" | sort) | head -n 5 | paste -sd, -)"
+  [ -n "$only_live" ] && printf '%s:   only in live: %s\n' "$tag" "$only_live"
+  [ -n "$only_repo" ] && printf '%s:   only in repo: %s\n' "$tag" "$only_repo"
+}
+
+json_merge() {  # repo file <- deep merge(repo, live); live wins scalars
+  # Stacking near-duplicate list entries once produced three "Default
+  # profile" karabiner profiles, all selected:true — Karabiner activates
+  # the first, so live rule edits looked "lost". Identity-aware merge:
+  # object lists fold same-key entries (live wins, repo order kept,
+  # live-only appended — past duplicates self-heal), scalar lists keep
+  # the union+dedup behavior. Validated by script/tests/adopt-merge.bash.
+  jq -s '
+    def deepmerge($b):
+      def idkey($lst):
+        (["name", "description", "id", "from"]
+         | map(. as $k
+             | select($lst | length > 0 and all(type == "object") and all(has($k)))
+             | $k)
+         | .[0]) // null;
+      def dedup_by($lst; $key):
+        reduce ($lst[]) as $x ([];
+          (map(.[$key]) | index($x[$key])) as $i
+          | if $i == null then . + [$x]
+            else .[$i] = (.[$i] | deepmerge($x))
+            end);
+      def merge_lists($x; $y):
+        ($x + $y) as $all
+        | if ($all | length) == 0 then $all
+          else idkey($all) as $key
+            | if $key == null then ($all | unique)
+              else
+                dedup_by($x; $key) as $dx
+                | dedup_by($y; $key) as $dy
+                | ($dx | map(.[$key])) as $dxkeys
+                | [ $dx[] | .[$key] as $k
+                    | ($dy | map(select(.[$key] == $k)) | .[0]) as $c
+                    | if $c == null then . else deepmerge($c) end ]
+                  + [ $dy[] | select(.[$key] as $kk | ($dxkeys | index($kk)) == null) ]
+              end
+          end;
+      reduce ($b | keys_unsorted[]) as $k (.;
+        . as $cur
+        | if ($cur[$k]? | type) == "object" and ($b[$k] | type) == "object"
+          then .[$k] = ($cur[$k] | deepmerge($b[$k]))
+          elif ($cur[$k]? | type) == "array" and ($b[$k] | type) == "array"
+          then .[$k] = merge_lists($cur[$k]; $b[$k])
+          else .[$k] = $b[$k]
+          end);
+    . as $in | $in[0] | deepmerge($in[1])' --indent 2 "$1" "$2" > "$1.adopt-tmp" 2>/dev/null \
+    && cat "$1.adopt-tmp" > "$1" && rm -f "$1.adopt-tmp"
+}
+
+adopted=0
+dirs_touched=0
+report_only=0
+[ "$INTERACTIVE" -eq 0 ] && [ -z "${ADOPT_ANSWER:-}" ] && report_only=1
+
+while IFS="$(printf '\t')" read -r src dst; do
+  if [ -z "$src" ] || [ -z "$dst" ]; then continue; fi
+  rel="${src#"$ROOT"/}"
+
+  # Broken symlink: a stale link INTO this layer means the layout changed
+  # under it — the content lives in the layer, so remove the dead link and
+  # let bootstrap relink fresh. A foreign dead link is left for bootstrap.
+  if [ -L "$dst" ] && [ ! -e "$dst" ]; then
+    case "$(readlink "$dst")" in
+      "$ROOT"/*)
+        rm "$dst"
+        ok "removed stale repo symlink at ${dst#"$HOME"/} (bootstrap relinks fresh)"
+        ;;
+      *)
+        warn "$dst is a broken symlink — keeping it (bootstrap will back it up)"
+        ;;
+    esac
+    continue
+  fi
+
+  # Directory target (e.g. a skills dir): union, no clobber, no prompt.
+  # (Checked before the identity test — cmp cannot compare directories.)
+  if [ -d "$dst" ] || [ -d "$src" ]; then
+    if ! diff -qr "$src" "$dst" >/dev/null 2>&1; then
+      printf '%s: drift at %s\n' "$tag" "${dst#"$HOME"/}"
+      if cp -an "$dst"/. "$src"/ 2>/dev/null; then
+        dirs_touched=$((dirs_touched + 1))
+        entries="$(git -C "$ROOT" status --porcelain -- "$src" 2>/dev/null | head -n 5)"
+        [ -n "$entries" ] && printf '%s\n' "$entries" | sed "s/^/$tag:   new in repo: /"
+      else
+        warn "could not union $dst into $rel"
+      fi
+    fi
+    continue
+  fi
+
+  # Identical content: swapping the file for a link loses nothing.
+  if cmp -s "$src" "$dst"; then
+    continue
+  fi
+
+  printf '%s: drift at %s\n' "$tag" "${dst#"$HOME"/}"
+
+  if [ "$report_only" -eq 1 ]; then
+    is_json_object "$src" "$dst" && printf '%s:   (would offer: merge / keep live / keep repo)\n' "$tag"
+    continue
+  fi
+
+  # Decide, then act. ADOPT_ANSWER short-circuits the prompt.
+  if is_json_object "$src" "$dst"; then
+    kind='json'; default='m'
+    # karabiner.json: the live file is written by Karabiner itself and is
+    # the whole truth (per-rule "enabled" flags, device list) — a merge
+    # would keep repo-only keys Karabiner has dropped (e.g. a stale
+    # "enabled": false on the Caps rule), silently reverting live edits.
+    # Adopt verbatim.
+    case "$dst" in
+      */karabiner.json) default='k' ;;
+    esac
+    json_summary "$src" "$dst"
+  else
+    kind='plain'; default='k'
+  fi
+
+  answer=''
+  if [ -n "${ADOPT_ANSWER:-}" ]; then
+    answer="$ADOPT_ANSWER"
+  else
+    while [ -z "$answer" ]; do
+      if [ "$kind" = json ]; then
+        if [ "$default" = m ]; then
+          printf '%s:   merge (default), keep live, keep repo, or diff? [m/k/r/d] ' "$tag"
+        else
+          printf '%s:   merge, keep live (default), keep repo, or diff? [m/k/r/d] ' "$tag"
+        fi
+      else
+        printf '%s:   keep live (default) or keep repo? [k/r/d] ' "$tag"
+      fi
+      IFS= read -r answer || answer=''
+      [ -z "$answer" ] && answer="$default"
+      case "$answer" in
+        m | k | r) ;;
+        d)
+          diff -u "$src" "$dst" 2>/dev/null | sed -n '3,42p' | sed "s/^/$tag:   | /"
+          answer=''
+          ;;
+        *)
+          printf '%s:   please answer m, k, r or d\n' "$tag" >&2
+          answer=''
+          ;;
+      esac
+    done
+  fi
+
+  case "$answer" in
+    m)
+      if [ "$kind" = json ] && json_merge "$src" "$dst"; then
+        adopted=$((adopted + 1))
+        ok "merged live into $rel (review with git diff)"
+      elif cp "$dst" "$src" 2>/dev/null; then
+        # Not mergeable (plain text) — "merge" degenerates to keep live.
+        adopted=$((adopted + 1))
+        ok "not mergeable as JSON — kept live for $rel"
+      else
+        warn "merge failed for $rel — keeping both sides as-is (bootstrap will back the live file up)"
+      fi
+      ;;
+    k)
+      if cp "$dst" "$src" 2>/dev/null; then
+        adopted=$((adopted + 1))
+        ok "kept live for $rel (repo now carries the machine version)"
+      else
+        warn "could not copy $dst onto $rel"
+      fi
+      ;;
+    r)
+      ok "kept repo for $rel (bootstrap will back the live file up)"
+      ;;
+  esac
+done <<<"$pairs"
+
+# --- Wrap-up -------------------------------------------------------------------
+if [ "$report_only" -eq 1 ]; then
+  echo
+  echo "$tag: report-only (no tty, no ADOPT_ANSWER) — nothing was changed."
+  echo "$tag: re-run from a terminal (script/setup) to reconcile; otherwise"
+  echo "$tag: bootstrap will back the live files up and link the repo versions."
+elif [ "$adopted" -gt 0 ] || [ "$dirs_touched" -gt 0 ]; then
+  echo
+  echo "$tag: $adopted file(s) and $dirs_touched dir(s) changed in the layer."
+  echo "$tag: review:  git -C $ROOT diff"
+  echo "$tag: then commit the adoption after setup is done."
+fi
+
+exit 0
