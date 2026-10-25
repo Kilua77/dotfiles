@@ -1,33 +1,180 @@
-# extract <archive> — universal archive extractor.
+# extract — universal archive extractor.
 # Loaded on first call via the autoload in functions/fpath.zsh.
-# Note: case matches the FIRST matching pattern, so compound suffixes
-# (e.g. *.pax.Z, *.tar.bz2) must be listed before their shorter forms.
+#
+# usage: extract <file|glob|re:regex> ...
+#
+#   extract a.tar.gz b.zip            several files
+#   extract '*.zip'                   zsh glob, quoted or bare
+#   extract 're:\.(zip|tgz|bz2)$'     ERE matched against the file names
+#                                     of the current directory
+#
+# Notes:
+#   - Extension dispatch is case-insensitive and matches the FIRST fitting
+#     branch; compound suffixes must stay listed before their shorter forms.
+#   - Every handler checks its tool exists and names it when missing.
+#   - Single-file compressors are streamed to "${file:r}" so the source
+#     archive is kept (plain gunzip/bunzip2 would delete it).
 
-if [[ -z "$1" ]]; then
-    echo "usage: extract <archive>" >&2
+local -aU targets       # deduped, first-seen order (-aU: without -a the
+                        # scalar "" seeds the array with an empty element)
+local -a matched
+local arg pat t low rc=0
+
+if (( $# == 0 )); then
+    echo "usage: extract <file|glob|re:regex> ..." >&2
     return 1
 fi
-if [[ ! -f "$1" ]]; then
-    echo "extract: no such file: $1" >&2
-    return 1
-fi
 
-case "$1" in
-    # tar family (same flags cover bz2/gz members).
-    *.tar.bz2|*.tbz2)   tar -xvf "$1" ;;
-    *.tar.gz|*.tgz)     tar -xvf "$1" ;;
-    *.tar)              tar -xvf "$1" ;;
-    # single-file compressors.
-    *.bz2)              bunzip2 "$1" ;;
-    *.gz)               gunzip "$1" ;;
-    *.zip|*.ZIP)        unzip "$1" ;;
-    *.rar)              unrar x "$1" ;;
-    *.7z)               7z x "$1" ;;
-    # legacy pax archives — *.pax.Z before *.pax and *.Z (see note above).
-    *.pax.Z)            uncompress "$1" | pax -r ;;
-    *.pax)              pax -r -f "$1" ;;
-    *.Z)                uncompress "$1" ;;
-    # darwin only: mount the disk image rather than unpack it.
-    *.dmg)              hdiutil mount "$1" ;;
-    *)                  echo "extract: unknown archive type: $1" >&2; return 1 ;;
-esac
+# --- resolve arguments into targets --------------------------------------
+for arg in "$@"; do
+    case "$arg" in
+        re:*)
+            pat="${arg#re:}"
+            matched=()
+            for t in *(.N); do
+                [[ "$t" =~ "$pat" ]] && matched+=("$t")
+            done
+            if (( $#matched )); then
+                targets+=("${matched[@]}")
+            else
+                echo "extract: no file matches regex: $pat" >&2
+                rc=1
+            fi
+            ;;
+        *[*?]*|*\[*)
+            # A pattern, not a literal name: expand it here so quoted
+            # globs ('*.zip') work too, with no match being an error.
+            setopt local_options null_glob
+            matched=(${~arg})
+            if (( $#matched )); then
+                targets+=("${matched[@]}")
+            else
+                echo "extract: no file matches pattern: $arg" >&2
+                rc=1
+            fi
+            ;;
+        *)
+            targets+=("$arg")
+            ;;
+    esac
+done
+
+# --- extract each target --------------------------------------------------
+for t in "${targets[@]}"; do
+    if [[ ! -f "$t" ]]; then
+        echo "extract: no such file: $t" >&2
+        rc=1
+        continue
+    fi
+    low="${t:l}"    # lowercase: dispatch ignores case (*.ZIP == *.zip)
+    case "$low" in
+        # tar family — modern tar auto-detects the compression layer.
+        *.tar|*.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tbz|*.tar.xz|*.txz|*.tar.zst|*.tzst|*.tar.lzma|*.tlz|*.tar.lz|*.tar.lz4|*.tar.z|*.taz)
+            (( $+commands[tar] )) || { echo "extract: tar not found" >&2; rc=1; continue; }
+            tar -xvf "$t"
+            ;;
+        # zip family (jar/war/ear/... are all zip containers).
+        *.zip|*.jar|*.war|*.ear|*.cbz|*.apk|*.ipa)
+            (( $+commands[unzip] )) || { echo "extract: unzip not found" >&2; rc=1; continue; }
+            unzip "$t"
+            ;;
+        *.7z|*.cb7|*.iso)
+            (( $+commands[7z] )) || { echo "extract: 7z not found" >&2; rc=1; continue; }
+            7z x "$t"
+            ;;
+        *.rar|*.cbr)
+            (( $+commands[unrar] )) || { echo "extract: unrar not found" >&2; rc=1; continue; }
+            unrar x "$t"
+            ;;
+        # packages.
+        *.rpm)
+            (( $+commands[rpm2cpio] && $+commands[cpio] )) || { echo "extract: rpm2cpio/cpio not found" >&2; rc=1; continue; }
+            rpm2cpio "$t" | cpio -idm
+            ;;
+        *.deb)
+            (( $+commands[ar] )) || { echo "extract: ar not found" >&2; rc=1; continue; }
+            # ar extracts into the current directory: give the deb its own.
+            local dir="${t:r}" origin="$t"
+            [[ "$origin" = /* ]] || origin="$PWD/$origin"
+            mkdir -p "$dir" && (cd "$dir" && ar x "$origin")
+            ;;
+        *.cab)
+            (( $+commands[cabextract] )) || { echo "extract: cabextract not found" >&2; rc=1; continue; }
+            cabextract "$t"
+            ;;
+        # legacy pax archives — before the *.z catch-all below.
+        *.pax.z)
+            (( $+commands[gzip] && $+commands[pax] )) || { echo "extract: gzip/pax not found" >&2; rc=1; continue; }
+            gzip -dc "$t" | pax -r
+            ;;
+        *.pax)
+            (( $+commands[pax] )) || { echo "extract: pax not found" >&2; rc=1; continue; }
+            pax -r -f "$t"
+            ;;
+        # exotic formats, kept for the day the tool shows up.
+        *.cpio)
+            (( $+commands[cpio] )) || { echo "extract: cpio not found" >&2; rc=1; continue; }
+            cpio -idm < "$t"
+            ;;
+        *.zpaq)
+            (( $+commands[zpaq] )) || { echo "extract: zpaq not found" >&2; rc=1; continue; }
+            zpaq x "$t"
+            ;;
+        *.squashfs)
+            (( $+commands[unsquashfs] )) || { echo "extract: unsquashfs not found" >&2; rc=1; continue; }
+            unsquashfs "$t"
+            ;;
+        *.lzh)
+            (( $+commands[lha] )) || { echo "extract: lha not found" >&2; rc=1; continue; }
+            lha x "$t"
+            ;;
+        *.ace)
+            (( $+commands[unace] )) || { echo "extract: unace not found" >&2; rc=1; continue; }
+            unace x "$t"
+            ;;
+        # single-file compressors — streamed so the source is kept.
+        *.gz|*.z)
+            (( $+commands[gzip] )) || { echo "extract: gzip not found" >&2; rc=1; continue; }
+            gzip -dc "$t" > "${t:r}"
+            ;;
+        *.bz2)
+            (( $+commands[bunzip2] )) || { echo "extract: bunzip2 not found" >&2; rc=1; continue; }
+            bunzip2 -c "$t" > "${t:r}"
+            ;;
+        *.xz|*.lzma)
+            (( $+commands[xz] )) || { echo "extract: xz not found" >&2; rc=1; continue; }
+            xz -dc "$t" > "${t:r}"
+            ;;
+        *.zst)
+            (( $+commands[zstd] )) || { echo "extract: zstd not found" >&2; rc=1; continue; }
+            zstd -dc "$t" > "${t:r}"
+            ;;
+        *.lz)
+            (( $+commands[lzip] )) || { echo "extract: lzip not found" >&2; rc=1; continue; }
+            lzip -dc "$t" > "${t:r}"
+            ;;
+        *.lz4)
+            (( $+commands[lz4] )) || { echo "extract: lz4 not found" >&2; rc=1; continue; }
+            lz4 -dc "$t" > "${t:r}"
+            ;;
+        *.br)
+            (( $+commands[brotli] )) || { echo "extract: brotli not found" >&2; rc=1; continue; }
+            brotli -dc "$t" > "${t:r}"
+            ;;
+        *.sz)
+            (( $+commands[snzip] )) || { echo "extract: snzip not found" >&2; rc=1; continue; }
+            snzip -dk "$t"
+            ;;
+        # darwin only: mount the disk image rather than unpack it.
+        *.dmg)
+            (( $+commands[hdiutil] )) || { echo "extract: hdiutil not found (macOS only)" >&2; rc=1; continue; }
+            hdiutil mount "$t"
+            ;;
+        *)
+            echo "extract: unknown archive type: $t" >&2
+            rc=1
+            ;;
+    esac || rc=1     # a handler that failed still fails the whole call
+done
+
+return $rc

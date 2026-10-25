@@ -1,0 +1,6 @@
+#compdef extract
+# Completion for the `extract` function: archive files only — the glob
+# and re:regex argument forms are typed by hand. Discovered automatically
+# by compinit thanks to the #compdef line above.
+
+_files -g '*.(tar|tar.gz|tgz|tar.bz2|tbz2|tbz|tar.xz|txz|tar.zst|tzst|tar.lzma|tlz|tar.lz|tar.lz4|tar.z|taz|zip|jar|war|ear|cbz|apk|ipa|7z|cb7|iso|rar|cbr|gz|bz2|xz|lzma|zst|lz|lz4|br|sz|Z|pax|rpm|deb|cab|cpio|zpaq|squashfs|lzh|ace|dmg)'
