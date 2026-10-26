@@ -143,7 +143,10 @@ jobs:
           readlink "$TESTHOME/.homedot" | grep -q 'fixture/fixture/homedot\.symlink$'
           ./script/bootstrap --root "$tmp/fixture" | grep -q '0 linked' # idempotent
 
-          ./script/install --root "$tmp/fixture" | grep -q 'fixture: install.sh ran'
+          install_out="$(./script/install --root "$tmp/fixture")"
+          printf '%s\n' "$install_out" | grep -q 'fixture: install.sh ran'
+          # claude-sync: no claude CLI on the runner — must degrade, not crash
+          printf '%s\n' "$install_out" | grep -q "claude-sync"
 
           # audit: disjoint by construction, must be silent and green
           ./script/audit

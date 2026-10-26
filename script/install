@@ -130,6 +130,16 @@ for installer in "${installers[@]}"; do
   fi
 done
 
+# 3. Declarative Claude convergence: a layer carrying claude/manifest.json
+# triggers claude-sync — MCP servers, marketplaces and plugins converged to
+# the union of every applied layer's manifest (machine-filtered). Gated
+# inside claude-sync itself, so an unchanged stack is a no-op.
+if [ -f "$DOTFILES_ROOT/claude/manifest.json" ] && [ -x "$ENGINE_ROOT/script/claude-sync" ]; then
+  echo '==> claude/manifest.json'
+  "$ENGINE_ROOT/script/claude-sync"
+  record claude-sync ok
+fi
+
 # --- SUMMARY -------------------------------------------------------------------
 echo
 echo 'install: SUMMARY'

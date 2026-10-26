@@ -145,13 +145,44 @@ else
   todo "settings — ~/.claude/settings.json missing; run: $ENGINE_ROOT/script/setup"
 fi
 
-# --- ~/.localrc: present, real values (names only, never values) ----------------
-# Expected MCP URL variables follow the per-machine selection: a server
-# deselected via DOTFILES_MCP_SERVERS needs no URL on this machine.
-LOCALRC_VARS='ZAI_API_KEY'
-for _s in ${DOTFILES_MCP_SERVERS:-}; do
-  LOCALRC_VARS="$LOCALRC_VARS $(printf '%s' "$_s" | tr '[:lower:]' '[:upper:]' | tr -cd '[:alnum:]')_MCP_URL"
+# --- Manifest union: the wanted MCP set comes from the applied layers ----------
+# (claude/manifest.json), filtered by the machine selection; the flag alone
+# still works for stacks without manifests.
+manifests=()
+for root in "${stack[@]}"; do
+  if [ -f "$root/claude/manifest.json" ]; then manifests+=("$root/claude/manifest.json"); fi
 done
+mcp_wanted=''
+if command -v jq >/dev/null 2>&1 && [ "${#manifests[@]}" -gt 0 ]; then
+  mcp_union_names="$(jq -sr 'reduce .[] as $m ({}; . * ($m.mcp // {})) | keys | join(" ")' \
+                     "${manifests[@]}" 2>/dev/null | tr -d '\n')"
+  if [ -n "${DOTFILES_MCP_SERVERS:-}" ]; then
+    for _s in $mcp_union_names; do
+      case " $DOTFILES_MCP_SERVERS " in *" $_s "*) mcp_wanted="$mcp_wanted $_s" ;; esac
+    done
+  else
+    mcp_wanted=" $mcp_union_names "
+  fi
+else
+  mcp_wanted=" ${DOTFILES_MCP_SERVERS:-} "
+fi
+
+# --- ~/.localrc: present, real values (names only, never values) ----------------
+# Expected MCP URL variables follow the wanted set: for manifest stacks the
+# env: variable each http server declares; for legacy stacks the uppercase
+# server-name convention. A deselected server needs no URL on this machine.
+LOCALRC_VARS='ZAI_API_KEY'
+if command -v jq >/dev/null 2>&1 && [ "${#manifests[@]}" -gt 0 ]; then
+  for _s in $mcp_wanted; do
+    _var="$(jq -sr --arg n "$_s" 'reduce .[] as $m ({}; . * ($m.mcp // {})) | .[$n].url // "" | select(startswith("env:")) | sub("^env:"; "")' \
+            "${manifests[@]}" 2>/dev/null)"
+    [ -n "$_var" ] && LOCALRC_VARS="$LOCALRC_VARS $_var"
+  done
+else
+  for _s in $mcp_wanted; do
+    LOCALRC_VARS="$LOCALRC_VARS $(printf '%s' "$_s" | tr '[:lower:]' '[:upper:]' | tr -cd '[:alnum:]')_MCP_URL"
+  done
+fi
 if [ ! -f "$HOME/.localrc" ]; then
   todo 'localrc — ~/.localrc missing; it is seeded by the claude topic installer via:'
   todo "localrc     $ENGINE_ROOT/script/setup   (or copy the layer's claude/localrc.example)"
@@ -178,16 +209,16 @@ else
 fi
 
 # --- MCP: are the WANTED servers registered (user scope)? -----------------------
-# The wanted set comes from the machine selection (DOTFILES_MCP_SERVERS) over
-# the manifest union; without manifests the flag alone drives the check.
+# The wanted set is the manifest union filtered by the machine selection
+# (DOTFILES_MCP_SERVERS); without manifests the flag alone drives the check.
 if command -v claude >/dev/null 2>&1; then
   if command -v timeout >/dev/null 2>&1; then
     mcp_list="$(timeout 15 claude mcp list 2>/dev/null || true)"
   else
     mcp_list="$(claude mcp list 2>/dev/null || true)"
   fi
-  wanted="${DOTFILES_MCP_SERVERS:-}"
-  if [ -n "$wanted" ]; then
+  wanted="$mcp_wanted"
+  if [ -n "${wanted// /}" ]; then
     before=$todos
     for server in $wanted; do
       printf '%s\n' "$mcp_list" | grep -q "$server" \
@@ -196,7 +227,7 @@ if command -v claude >/dev/null 2>&1; then
     [ "$todos" -eq "$before" ] \
       && ok "mcp — wanted server(s) registered: $wanted (visible in NEW sessions; /mcp to connect)"
   else
-    note 'mcp — no DOTFILES_MCP_SERVERS selection on this machine'
+    note 'mcp — nothing wanted: no manifest in the stack and no DOTFILES_MCP_SERVERS selection'
   fi
 else
   note "mcp — 'claude' CLI not found, registration check skipped"

@@ -1,0 +1,6 @@
+{
+  "mcp": {
+    "fixture-demo": { "transport": "http", "url": "env:FIXTURE_DEMO_MCP_URL" },
+    "chrome-devtools": { "transport": "stdio", "mode": "manual" }
+  }
+}

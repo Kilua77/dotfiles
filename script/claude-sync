@@ -1,0 +1,343 @@
+#!/usr/bin/env bash
+#
+# claude-sync — converge this machine's Claude Code MCP servers, marketplaces
+# and plugins to the union of the applied layers' claude/manifest.json.
+#
+# The manifest is the DESIRED state; the machine selection in ~/.localrc
+# filters it (names only, never values):
+#
+#   DOTFILES_MCP_SERVERS   subset of the union's MCP names — a name absent
+#                          from the list is deselected (unregistered)
+#   DOTFILES_SKIP_PLUGINS  declared plugins to keep DISABLED on this machine
+#                          (never uninstalled)
+#
+#   claude/manifest.json:
+#     { "mcp":         { "<name>": { "transport": "http", "url": "env:VAR" }
+#                      | { "transport": "stdio", "mode": "manual" } },
+#       "marketplaces": { "<name>": { "source": "owner/repo" } },
+#       "plugins":      { "<name>@<marketplace>": { "enabled": true } } }
+#
+# Semantics:
+#   - http URLs are env: references resolved from ~/.localrc at run time —
+#     a literal URL in a manifest is rejected (secrets never enter a repo).
+#   - stdio servers are declare-to-monitor ("mode": "manual"): doctor
+#     verifies presence, no script ever touches them.
+#   - MCP: register = remove-then-add (idempotent); deselect = remove.
+#     A user-scope server named by NO manifest is a note; --prune removes it.
+#   - plugins: missing → install; enabled enforced; enabled-but-undeclared
+#     is a note; --prune DISABLES it (never uninstalls).
+#   - cross-layer collisions (same MCP/plugin name, different spec) are
+#     reported and the entry is skipped — the stack must not be ambiguous.
+#
+# The whole run is gated on the sha256 of every manifest + ~/.localrc, so an
+# unchanged stack is a no-op (--force re-runs). WARN-and-continue: one bad
+# entry never blocks the others. Registration changes only appear in NEW
+# Claude Code sessions (connect with /mcp).
+
+set -uo pipefail
+
+ENGINE_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+
+PRUNE=0
+FORCE=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --prune) PRUNE=1; shift ;;
+    --force) FORCE=1; shift ;;
+    -h|--help) sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) printf 'claude-sync: unknown option: %s\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+say()   { printf 'claude-sync: %s\n' "$*"; }
+warn()  { printf 'claude-sync: WARN %s\n' "$*"; }
+
+# Machine flags: names only are ever printed, never values.
+# shellcheck source=/dev/null  # user-local, by definition not in this repo
+if [ -f "$HOME/.localrc" ]; then . "$HOME/.localrc"; fi
+
+command -v jq >/dev/null 2>&1 || { say 'jq is required — aborting'; exit 1; }
+
+# --- the stack, and its manifests ------------------------------------------------
+stack=("$ENGINE_ROOT")
+stack_names=(public)
+if [ -x "$ENGINE_ROOT/script/layers" ]; then
+  while IFS="$(printf '\t')" read -r lname lpath _lurl; do
+    [ -n "$lname" ] || continue
+    stack+=("$lpath")
+    stack_names+=("$lname")
+  done < <("$ENGINE_ROOT/script/layers" stack)
+fi
+
+manifests=()
+manifest_labels=()
+settings_owners=()
+i=0
+for root in "${stack[@]}"; do
+  if [ -f "$root/claude/manifest.json" ]; then
+    if jq -e 'type == "object"' "$root/claude/manifest.json" >/dev/null 2>&1; then
+      manifests+=("$root/claude/manifest.json")
+      manifest_labels+=("${stack_names[$i]}")
+    else
+      warn "[${stack_names[$i]}] claude/manifest.json is not a JSON object — ignored"
+    fi
+  fi
+  if [ -f "$root/claude/home/.claude/settings.json" ]; then
+    settings_owners+=("${stack_names[$i]}")
+  fi
+  i=$((i + 1))
+done
+
+if [ "${#manifests[@]}" -eq 0 ]; then
+  say 'no claude/manifest.json in the stack — nothing to converge'
+  exit 0
+fi
+
+# At most one applied layer may own the settings template (policy keys would
+# otherwise silently win per apply order — the contract forbids the ambiguity).
+if [ "${#settings_owners[@]}" -gt 1 ]; then
+  warn "settings template shipped by several layers: ${settings_owners[*]} — exactly one owner allowed (docs/LAYERS.md)"
+fi
+
+# --- the gate: manifests + localrc unchanged ⇒ no-op -----------------------------
+# shellcheck source=/dev/null
+. "$ENGINE_ROOT/script/gate.sh"
+gate_input="$(mktemp)"
+trap 'rm -f "$gate_input"' EXIT
+for m in "${manifests[@]}"; do
+  printf '### %s\n' "$m" >> "$gate_input"
+  cat "$m" >> "$gate_input" 2>/dev/null || true
+done
+if [ -f "$HOME/.localrc" ]; then printf '### localrc\n' >> "$gate_input"; fi
+if [ "$FORCE" -eq 0 ] && ! gate claude-sync "$gate_input"; then
+  say 'manifests and localrc unchanged since the last run — skipped (claude-sync --force to re-run)'
+  exit 0
+fi
+
+# --- union of the manifests, with collision detection -----------------------------
+# section_union <key> — jq merge of every manifest's <key> object
+section_union() {
+  jq -s "reduce .[] as \$m ({}; . * (\$m.$1 // {}))" "${manifests[@]}"
+}
+
+# section_collisions <key> — names declared by several layers with DIFFERENT specs
+section_collisions() {
+  jq -s "[ .[] | (.$1 // {}) | to_entries[] ]
+         | group_by(.key)
+         | map(select(length > 1 and ([.[].value] | unique | length) > 1))
+         | map(.key) | unique | .[]" "${manifests[@]}" 2>/dev/null || true
+}
+
+mcp_union="$(section_union mcp)"
+mcp_collisions="$(section_collisions mcp)"
+plugins_union="$(section_union plugins)"
+plugin_collisions="$(section_collisions plugins)"
+market_union="$(section_union marketplaces)"
+
+for name in $mcp_collisions; do
+  warn "MCP '$name' declared with different specs across layers — skipped; make the layers agree"
+  mcp_union="$(printf '%s' "$mcp_union" | jq --arg n "$name" 'del(.[$n])')"
+done
+for pid in $plugin_collisions; do
+  warn "plugin '$pid' declared with different specs across layers — skipped; make the layers agree"
+  plugins_union="$(printf '%s' "$plugins_union" | jq --arg n "$pid" 'del(.[$n])')"
+done
+
+# --- machine selection -------------------------------------------------------------
+# DOTFILES_MCP_SERVERS: if set, a subset of the union's names; names absent
+# from it are deselected (removed). Unknown names in the flag are typos.
+mcp_all="$(printf '%s' "$mcp_union" | jq -r 'keys | join(" ")' | tr -d '\n')"
+if [ -n "${DOTFILES_MCP_SERVERS:-}" ]; then
+  for s in $DOTFILES_MCP_SERVERS; do
+    case " $mcp_all " in
+      *" $s "*) ;;
+      *) warn "DOTFILES_MCP_SERVERS names '$s' which no manifest declares — typo?" ;;
+    esac
+  done
+fi
+
+have_claude=0
+command -v claude >/dev/null 2>&1 && have_claude=1
+if [ "$have_claude" -eq 0 ]; then
+  warn "'claude' CLI not found — registration/convergence skipped (install it, re-run setup)"
+fi
+
+# Registered user-scope servers, from the file the CLI itself writes. The
+# plugin-provided ones (plugin:<plugin>:<server>) are owned by their plugin.
+registered=''
+if [ -f "$HOME/.claude.json" ]; then
+  registered="$(jq -r '.mcpServers // {} | keys | join(" ")' "$HOME/.claude.json" 2>/dev/null | tr -d '\n')"
+fi
+
+# --- MCP ---------------------------------------------------------------------------
+changed=0
+for name in $mcp_all; do
+  spec="$(printf '%s' "$mcp_union" | jq -r --arg n "$name" '.[$n]')"
+  transport="$(printf '%s' "$spec" | jq -r '.transport // "http"')"
+  mode="$(printf '%s' "$spec" | jq -r '.mode // ""')"
+
+  # Machine selection: absent from DOTFILES_MCP_SERVERS ⇒ deselected.
+  if [ -n "${DOTFILES_MCP_SERVERS:-}" ]; then
+    case " $DOTFILES_MCP_SERVERS " in
+      *" $name "*) ;;
+      *)
+        if [ "$have_claude" -eq 1 ] && printf ' %s ' "$registered" | grep -q " $name "; then
+          claude mcp remove --scope user "$name" >/dev/null 2>&1 && changed=$((changed + 1)) \
+            && say "mcp: '$name' deselected on this machine — unregistered"
+        fi
+        continue ;;
+    esac
+  fi
+
+  if [ "$transport" = stdio ]; then
+    if [ "$mode" != manual ]; then
+      warn "mcp: '$name' is stdio without mode:manual — only manual stdio is supported; skipped"
+    fi
+    # manual: declare-to-monitor, doctor verifies presence. Nothing to do.
+    continue
+  fi
+
+  urlref="$(printf '%s' "$spec" | jq -r '.url // ""')"
+  case "$urlref" in
+    env:*) var="${urlref#env:}" ;;
+    '')
+      warn "mcp: '$name' has no url — skipped"; continue ;;
+    *)
+      warn "mcp: '$name' url must be an env: reference, not a literal — secrets never enter a repo; skipped"; continue ;;
+  esac
+  val="${!var:-}"
+  if [ -z "$val" ]; then
+    warn "mcp: '$name' needs \$$var — add to ~/.localrc: export ${var}='https://…'"
+    continue
+  fi
+  case "$val" in
+    *example.invalid*|*CHANGE-ME*)
+      warn "mcp: '$name' — \$$var is still the skeleton placeholder; skipped"; continue ;;
+  esac
+
+  if [ "$have_claude" -eq 1 ]; then
+    # remove-then-add: idempotent, and the only path that also fixes a URL change.
+    claude mcp remove --scope user "$name" >/dev/null 2>&1 || true
+    if claude mcp add --transport http --scope user "$name" "$val" >/dev/null 2>&1; then
+      changed=$((changed + 1))
+    else
+      warn "mcp: registering '$name' failed"
+    fi
+  fi
+done
+
+# Registered but declared nowhere: note (or remove with --prune).
+for reg in $registered; do
+  case "$reg" in plugin:*) continue ;; esac
+  case " $mcp_all " in
+    *" $reg "*) ;;
+    *)
+      if [ "$PRUNE" -eq 1 ] && [ "$have_claude" -eq 1 ]; then
+        claude mcp remove --scope user "$reg" >/dev/null 2>&1 \
+          && say "mcp: '$reg' registered but declared nowhere — pruned (--prune)" \
+          && changed=$((changed + 1))
+      else
+        say "note: '$reg' is registered but declared by no manifest (claude-sync --prune removes it)"
+      fi
+      ;;
+  esac
+done
+
+# --- marketplaces --------------------------------------------------------------------
+if [ "$have_claude" -eq 1 ]; then
+  mkt_json="$(claude plugin marketplace list --json 2>/dev/null || echo '[]')"
+  mkt_names="$(printf '%s' "$mkt_json" | jq -r '.[].name' 2>/dev/null | paste -sd' ' -)"
+  mkt_all="$(printf '%s' "$market_union" | jq -r 'keys | join(" ")' | tr -d '\n')"
+  for mkt in $mkt_all; do
+    case " $mkt_names " in *" $mkt "*) continue ;; esac
+    source="$(printf '%s' "$market_union" | jq -r --arg n "$mkt" '.[$n].source')"
+    [ -n "$source" ] || { warn "marketplace '$mkt' has no source — skipped"; continue; }
+    if claude plugin marketplace add "$source" >/dev/null 2>&1; then
+      changed=$((changed + 1))
+      say "marketplace: added '$mkt' ($source)"
+    else
+      warn "marketplace: adding '$mkt' from $source failed"
+    fi
+  done
+fi
+
+# --- plugins ---------------------------------------------------------------------------
+if [ "$have_claude" -eq 1 ]; then
+  plugins_all="$(printf '%s' "$plugins_union" | jq -r 'keys | join(" ")' | tr -d '\n')"
+  live_json="$(claude plugin list --json 2>/dev/null || echo '[]')"
+  live_enabled="$(printf '%s' "$live_json" | jq -r '.[] | select(.enabled == true) | .id' 2>/dev/null | paste -sd' ' -)"
+  live_installed="$(printf '%s' "$live_json" | jq -r '.[].id' 2>/dev/null | paste -sd' ' -)"
+
+  for pid in $plugins_all; do
+    want="$(printf '%s' "$plugins_union" | jq -r --arg n "$pid" '.[$n].enabled')"
+
+    # Machine selection: skip-listed plugins stay installed but disabled.
+    skipped=0
+    case " ${DOTFILES_SKIP_PLUGINS:-} " in
+      *" $pid "*) skipped=1; want=false ;;
+    esac
+
+    case " $live_installed " in
+      *" $pid "*) ;;
+      *)
+        if [ "$skipped" -eq 1 ]; then
+          say "plugin: '$pid' skip-listed and not installed — leaving it uninstalled"
+          continue
+        fi
+        if claude plugin install -y "$pid" >/dev/null 2>&1; then
+          changed=$((changed + 1))
+          say "plugin: installed '$pid'"
+          live_installed="$live_installed $pid"
+          [ "$want" = true ] && live_enabled="$live_enabled $pid"
+        else
+          warn "plugin: installing '$pid' failed (marketplace known?)"
+          continue
+        fi
+        ;;
+    esac
+
+    is_enabled=0
+    case " $live_enabled " in *" $pid "*) is_enabled=1 ;; esac
+    if [ "$want" = true ] && [ "$is_enabled" -eq 0 ]; then
+      if claude plugin enable "$pid" >/dev/null 2>&1; then
+        changed=$((changed + 1)); say "plugin: enabled '$pid'"
+      else
+        warn "plugin: enabling '$pid' failed"
+      fi
+    elif [ "$want" = false ] && [ "$is_enabled" -eq 1 ]; then
+      suffix=''
+      [ "$skipped" -eq 1 ] && suffix=' (skip-listed on this machine)'
+      if claude plugin disable "$pid" >/dev/null 2>&1; then
+        changed=$((changed + 1)); say "plugin: disabled '$pid'$suffix"
+      else
+        warn "plugin: disabling '$pid' failed"
+      fi
+    fi
+  done
+
+  # Enabled but declared nowhere: note (or disable with --prune).
+  for pid in $live_enabled; do
+    case " $plugins_all " in
+      *" $pid "*) ;;
+      *)
+        if [ "$PRUNE" -eq 1 ]; then
+          claude plugin disable "$pid" >/dev/null 2>&1 \
+            && say "plugin: '$pid' enabled but declared nowhere — disabled (--prune; never uninstalled)" \
+            && changed=$((changed + 1))
+        else
+          say "note: plugin '$pid' is enabled but declared by no manifest (claude-sync --prune disables it)"
+        fi
+        ;;
+    esac
+  done
+fi
+
+# --- close the gate, close the run -------------------------------------------------------
+gate_done claude-sync "$gate_input"
+if [ "$changed" -gt 0 ]; then
+  say "$changed change(s) applied"
+else
+  say 'already converged — nothing to change'
+fi
+say 'registration changes appear in NEW Claude Code sessions (connect with /mcp)'
+exit 0

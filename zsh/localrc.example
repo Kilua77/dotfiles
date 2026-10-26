@@ -23,6 +23,16 @@
 # system clang/cmake are then used as-is, source builds need a system gcc).
 # export DOTFILES_SKIP_LLVM=1
 
+# --- layer stack selection --------------------------------------------------
+# Machine-level selection OVER the union of the applied layers' Claude
+# manifests (docs/LAYERS.md). Names only, never values.
+# MCP: a declared server absent from this list is unregistered here.
+# export DOTFILES_MCP_SERVERS='notion firecrawl transcriptapi wiki'
+# Skills: repo-owned skill links to NOT create on this machine.
+# export DOTFILES_SKIP_SKILLS='hermes-mcp'
+# Plugins: declared plugins kept DISABLED here (never uninstalled).
+# export DOTFILES_SKIP_PLUGINS='egm@egm'
+
 # --- machine variance --------------------------------------------------------
 # Compiler choice differs per machine (e.g. clang here, gcc elsewhere).
 # These NEVER go in a committed file — a fresh clone must stay neutral.
