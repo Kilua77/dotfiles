@@ -137,11 +137,16 @@ jobs:
           ./script/layers list | grep -q '^\[1\] fixture'
           ./script/layers paths | grep -qx "$tmp/fixture"
 
-          ./script/bootstrap --root "$tmp/fixture" --dry-run | grep -q '^LINK'
+          # grep -q closes its stdin at the first match; piping a set -e
+          # script into it races EPIPE (fine on macOS, fatal on Linux
+          # runners) — always capture first, grep the variable.
+          boot_plan="$(./script/bootstrap --root "$tmp/fixture" --dry-run)"
+          printf '%s\n' "$boot_plan" | grep -q '^LINK'
           [ ! -e "$TESTHOME/.homedot" ] # dry-run touched nothing
           ./script/bootstrap --root "$tmp/fixture" --force
           readlink "$TESTHOME/.homedot" | grep -q 'fixture/fixture/homedot\.symlink$'
-          ./script/bootstrap --root "$tmp/fixture" | grep -q '0 linked' # idempotent
+          boot_again="$(./script/bootstrap --root "$tmp/fixture")"
+          printf '%s\n' "$boot_again" | grep -q '0 linked' # idempotent
 
           install_out="$(./script/install --root "$tmp/fixture")"
           printf '%s\n' "$install_out" | grep -q 'fixture: install.sh ran'
