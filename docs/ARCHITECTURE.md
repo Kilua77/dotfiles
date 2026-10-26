@@ -2,6 +2,14 @@
 
 One mental model, three mechanisms. Everything else is convention.
 
+This repository is also the **engine** of a layer stack: private layers
+(git repositories holding `layer.json` + topics, no scripts of their own)
+are cloned and applied on top of it by the same `bootstrap`/`install`
+(parameterized with `--root`), orchestrated by `script/setup` /
+`bin/dot`, checked by `script/doctor` / `script/audit`. The layer
+contract — what a conforming layer may contain, the disjointness rules,
+the Claude manifest — is specified in [docs/LAYERS.md](LAYERS.md).
+
 ## The topic model
 
 The repository is a set of **topic directories** — one directory per subject

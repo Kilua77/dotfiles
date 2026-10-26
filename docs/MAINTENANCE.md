@@ -57,6 +57,9 @@ rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
 ~/.dotfiles/script/install
 ```
 
+(The directory also holds the namespaced layer gates —
+`gate-<layer>/<key>` — and the `claude-sync` gate; all reset together.)
+
 ## Change the compiler / machine flags
 
 `~/.localrc` (never committed):
@@ -72,10 +75,42 @@ export DOTFILES_SKIP_LLVM=1              # opt-out: skip the ~2 GB LLVM prefix
 
 This repo is the **public plumbing**: generic, reusable, no personal data, no
 secrets, no hints about specific environments or services. Anything personal
-lives in a **private overlay** — a second repo with the same topic model,
-applied after this one. The concept, the split criteria, the apply order, the
-disjoint-file-set audit and the public extension points are documented in
-[docs/OVERLAY.md](OVERLAY.md).
+lives in a **private layer** — a git repo conforming to
+[docs/LAYERS.md](LAYERS.md) (a `layer.json` + topics, no scripts), applied by
+this repo's engine on top of it.
+
+## Layer recipes
+
+The stack on this machine lives in `~/.config/dotfiles/layers` (one layer per
+line, `name TAB url TAB path`, order = apply order; the engine is always
+layer 0). `script/layers` is its only writer besides your editor.
+
+```sh
+~/.dotfiles/script/layers list                 # stack order + git state
+~/.dotfiles/script/layers add <url>            # clone + register
+~/.dotfiles/script/layers add <existing-dir>   # register in place (records origin)
+~/.dotfiles/script/layers remove <name>        # unregister (clone stays on disk)
+~/.dotfiles/script/audit                       # pairwise target disjointness — must print nothing
+```
+
+After adding files to any layer, run `script/audit` on every OS that layer
+targets — two layers resolving the same `$HOME` target is the one hard
+collision in the model. Gate keys inside a layer are namespaced
+(`<layer>/<key>`); *Force everything to re-run* resets them with the rest.
+
+## Claude convergence
+
+A layer carrying `claude/manifest.json` gets its MCP servers, marketplaces
+and plugins converged to the manifest union (machine-filtered by
+`DOTFILES_MCP_SERVERS` / `DOTFILES_SKIP_PLUGINS`) whenever its install runs
+— the converger is `script/claude-sync`, gated on manifests + `~/.localrc`:
+
+```sh
+~/.dotfiles/script/claude-sync --force         # re-run despite the gate
+~/.dotfiles/script/claude-sync --prune         # disable undeclared enabled plugins / drop undeclared servers
+```
+
+Plugin mutations are disable-not-uninstall; `--prune` says so in its output.
 
 ## Before pushing
 

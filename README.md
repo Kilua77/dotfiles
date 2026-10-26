@@ -16,6 +16,14 @@ git clone <this repo> ~/.dotfiles
 ~/.dotfiles/script/install     # packages + per-topic installers
 ```
 
+This repo is also the **engine of a layer stack**: private layers (your
+personal/work repos, conforming to [docs/LAYERS.md](docs/LAYERS.md)) are
+installed in the same step:
+
+```sh
+~/.dotfiles/script/setup --layer <private-layer-url>
+```
+
 On Linux the install is **100% userland** (`~/.local`): no apt, no dnf, no
 sudo — a Red Hat machine without root follows the same path as Ubuntu,
 Debian or WSL (see `local/`). macOS uses Homebrew (`Brewfile`). Linux
@@ -56,6 +64,7 @@ userland-installable; the clipboard cascade in tmux uses `clip.exe`
   `zsh/localrc.example`.
 
 Docs: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
-[docs/OVERLAY.md](docs/OVERLAY.md) (run a private layer on top) ·
+[docs/LAYERS.md](docs/LAYERS.md) (the private-layer contract) ·
+[docs/OVERLAY.md](docs/OVERLAY.md) (retired pointer to LAYERS.md) ·
 [docs/MAINTENANCE.md](docs/MAINTENANCE.md) ·
 [docs/PORTING.md](docs/PORTING.md) (full 2016→2026 porting audit).
