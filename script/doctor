@@ -171,7 +171,9 @@ fi
 # Expected MCP URL variables follow the wanted set: for manifest stacks the
 # env: variable each http server declares; for legacy stacks the uppercase
 # server-name convention. A deselected server needs no URL on this machine.
-LOCALRC_VARS='ZAI_API_KEY'
+# (No baseline vars: the engine expects none of its own — layer-specific
+# keys like the old ZAI_API_KEY statusline quota belong to layers, not here.)
+LOCALRC_VARS=''
 if command -v jq >/dev/null 2>&1 && [ "${#manifests[@]}" -gt 0 ]; then
   for _s in $mcp_wanted; do
     _var="$(jq -sr --arg n "$_s" 'reduce .[] as $m ({}; . * ($m.mcp // {})) | .[$n].url // "" | select(startswith("env:")) | sub("^env:"; "")' \
