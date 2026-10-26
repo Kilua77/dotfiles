@@ -97,11 +97,14 @@ cmd_add() {
 
   if [ -d "$url" ] && [ -f "$url/layer.json" ]; then
     # Existing local layer directory (a fixture, or a migrated clone):
-    # register in place, no clone.
+    # register in place, no clone. Record the origin URL when there is one,
+    # so the registry documents where a fresh machine would clone from.
     path="$(cd "$url" && pwd -P)"
     name="$(layer_name "$path")" || true
     [ -n "$name" ] || die "$path has a layer.json but no valid name"
     [ -d "$path/.git" ] || die "$path is not a git repository (layers are git repos)"
+    origin="$(git -C "$path" remote get-url origin 2>/dev/null || true)"
+    [ -n "$origin" ] && url="$origin"
   else
     # Clone into a staging dir under $HOME, read the name, then move into
     # place — mv stays on the same filesystem.

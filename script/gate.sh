@@ -32,6 +32,7 @@ gate() {
 
 gate_done() {
   key="$1" file="$2"
-  mkdir -p "$GATE_STATE"
+  # Namespaced keys (<layer>/<key>) live one directory down — create it.
+  mkdir -p "$(dirname "$GATE_STATE/gate-$key")"
   _sha256 "$file" > "$GATE_STATE/gate-$key"
 }
