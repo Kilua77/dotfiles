@@ -106,17 +106,24 @@ rewrite() {  # rewrite <begin> <end> <sed-expr>
 # --- guards ---------------------------------------------------------------------
 
 # Guard A: a settings.json `env` entry would silently win over the shell and
-# can never be unset from localrc — the 2026-10-26 regression shape.
+# can never be unset from localrc — the 2026-10-26 regression shape. The
+# top-level `model` key is the second route-coupled spot (lesson 2026-10-30):
+# Claude Code itself persists /model "default" picks there, so a gateway id
+# can drift in without any setup writing it.
 check_settings() {  # dies 4
   [ -f "$SETTINGS" ] || return 0
-  local keys offending=''
+  local keys offending='' model_val
   keys=$(jq -r '.env // {} | keys[]' "$SETTINGS" 2>/dev/null) \
     || die 4 "cannot parse $SETTINGS — routing guard (fix the file, or the layer template)"
   for k in $keys; do
     case " $VARS " in *" $k "*) offending="$offending $k" ;; esac
   done
+  # Native aliases (sonnet, claude-*) are fine; a gateway-prefixed id (glm/…)
+  # would be sent to the official API verbatim in anthropic mode.
+  model_val=$(jq -r '.model // ""' "$SETTINGS" 2>/dev/null) || model_val=''
+  case "$model_val" in */*) offending="$offending model=$model_val" ;; esac
   [ -z "$offending" ] \
-    || die 4 "settings.json env still carries routing (${offending# }) — fix the layer template and re-run setup"
+    || die 4 "settings.json still carries routing (${offending# }) — fix the layer template and re-run setup"
 }
 
 # Guard B: live routing exports outside the block would fight it.
@@ -143,16 +150,36 @@ health_gateway() {  # any HTTP answer means alive (307 on /, 404 on /health)
     || die 2 "gateway not answering at the block's URL (tailnet down?) — nothing was written; retry later or: claude-route anthropic"
 }
 
+# A non-empty credentials file is not a login (lesson 2026-10-30: an aborted
+# or stale /login leaves expiresAt 0 with an expired refresh token — every
+# prompt then fails as "model not found" while `-s` says all is well).
+# Structural liveness only, no network, no token values: access or refresh
+# expiry in the future. Epochs are normalised first — the file mixes seconds
+# and milliseconds, and an EXPIRED milliseconds value still dwarfs a seconds
+# `now` (the exact false positive that first shipped this check).
+oauth_epoch_s() {  # normalise a numeric epoch (ms → s); anything else → 0
+  case "$1" in ''|*[!0-9]*) echo 0; return ;; esac
+  if [ "$1" -ge 1000000000000 ]; then echo $(( $1 / 1000 )); else echo "$1"; fi
+}
+
+oauth_session_alive() {
+  local now exp ref
+  now=$(date +%s)
+  exp=$(oauth_epoch_s "$(jq -r '.claudeAiOauth.expiresAt // 0' "$CREDENTIALS" 2>/dev/null)") || exp=0
+  ref=$(oauth_epoch_s "$(jq -r '.claudeAiOauth.refreshTokenExpiresAt // 0' "$CREDENTIALS" 2>/dev/null)") || ref=0
+  [ "$exp" -gt "$now" ] || [ "$ref" -gt "$now" ]
+}
+
 health_anthropic() {
   case "$(uname -s)" in
     Darwin) echo 'claude-route: note — macOS keeps /login credentials in the Keychain; skipping the file check'; return 0 ;;
   esac
-  if [ -s "$CREDENTIALS" ]; then return 0; fi
+  if oauth_session_alive; then return 0; fi
   if [ "${FORCE:-0}" = 1 ]; then
-    echo 'claude-route: WARN — forcing anthropic without ~/.claude/.credentials.json (no /login state found)'
+    echo 'claude-route: WARN — forcing anthropic with no live OAuth session in ~/.claude/.credentials.json'
     return 0
   fi
-  die 2 'no ~/.claude/.credentials.json — run claude /login first, or pass --force'
+  die 2 'no live OAuth session in ~/.claude/.credentials.json (missing, expired, or aborted /login) — redo claude /login in a shell stripped of the routing exports, or pass --force'
 }
 
 # --- subcommands ------------------------------------------------------------------
@@ -256,19 +283,28 @@ cmd_status() {
       problems=1
     fi
     head="$head; active: ${names:-none}"
+    # The fallback target deserves eyes while the gateway works — a dead
+    # login is invisible until the night you need it (lesson 2026-10-30).
+    case "$(uname -s)" in
+      Darwin) : ;;
+      *) if ! oauth_session_alive; then
+           head="$head; WARN anthropic fallback dead — no live OAuth session (redo claude /login)"
+           problems=1
+         fi ;;
+    esac
   else
     case "$(uname -s)" in
       Darwin) head="$head; credentials in Keychain (unchecked)" ;;
       *)
-        if [ -s "$CREDENTIALS" ]; then
-          head="$head; OAuth credentials present"
+        if oauth_session_alive; then
+          head="$head; OAuth session live"
         else
-          head="$head; WARN no ~/.claude/.credentials.json (claude /login)"
+          head="$head; WARN OAuth session dead or missing — redo claude /login (routing-stripped shell)"
           problems=1
         fi ;;
     esac
   fi
-  if ! check_settings_quiet; then head="$head; WARN routing keys in settings.json env"; problems=1; fi
+  if ! check_settings_quiet; then head="$head; WARN route-coupled keys in settings.json (env or model)"; problems=1; fi
   if ! check_stray_quiet "$b" "$e"; then head="$head; WARN stray exports outside block"; problems=1; fi
   echo "$head"
   [ "$problems" = 0 ] || exit 10
@@ -277,11 +313,13 @@ cmd_status() {
 # Quiet variants for status (report, never die).
 check_settings_quiet() {
   [ -f "$SETTINGS" ] || return 0
-  local keys k
+  local keys k model_val
   keys=$(jq -r '.env // {} | keys[]' "$SETTINGS" 2>/dev/null) || return 1
   for k in $keys; do
     case " $VARS " in *" $k "*) return 1 ;; esac
   done
+  model_val=$(jq -r '.model // ""' "$SETTINGS" 2>/dev/null) || model_val=''
+  case "$model_val" in */*) return 1 ;; esac
   return 0
 }
 check_stray_quiet() {
