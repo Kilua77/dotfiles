@@ -37,7 +37,7 @@ END='# <<< claude-route <<<'
 # coupled to the gateway's context window, not the native one.)
 VARS='ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL CLAUDE_CODE_MAX_CONTEXT_TOKENS CLAUDE_CODE_AUTO_COMPACT_WINDOW CLAUDE_AUTOCOMPACT_PCT_OVERRIDE'
 
-RESTART_NOTE='claude-route: restart your Claude Code sessions — a live session keeps its old routing (hot switch breaks the hybrid classifier, lesson 2026-10-26)'
+RESTART_NOTE='claude-route: open a NEW terminal, then restart your Claude Code sessions — a live shell keeps its old exports, and a live session keeps its old routing (hot switch breaks the hybrid classifier, lesson 2026-10-26)'
 
 die() { echo "claude-route: $2" >&2; exit "$1"; }
 
@@ -172,7 +172,7 @@ oauth_session_alive() {
 
 health_anthropic() {
   case "$(uname -s)" in
-    Darwin) echo 'claude-route: note — macOS keeps /login credentials in the Keychain; skipping the file check'; return 0 ;;
+    Darwin) echo 'claude-route: note — macOS keeps /login credentials in the Keychain; liveness cannot be checked here — verify once with a live prompt'; return 0 ;;
   esac
   if oauth_session_alive; then return 0; fi
   if [ "${FORCE:-0}" = 1 ]; then
@@ -236,7 +236,15 @@ cmd_init() {
   mv "$tmp" "$LOCALRC"
   chmod 600 "$LOCALRC"
   echo "claude-route: block written — absorbed from localrc:${src_local:- none}; from settings.json:${src_settings:- none}"
-  echo 'claude-route: routing unchanged (exports stay live: 9router) — no session restart needed'
+  # The block keeps the intent of the absorbed lines: commented stays commented.
+  # Say the resulting mode out loud — an unconditional "exports stay live" once
+  # shipped a commented (anthropic) block while claiming 9router (lesson 2026-10-30).
+  if printf '%s\n' "$block" | grep -q '^export '; then
+    echo 'claude-route: routing unchanged (exports stay live: 9router) — no switch needed'
+  else
+    echo 'claude-route: absorbed lines were commented — the block is in ANTHROPIC mode'
+    echo 'claude-route: to route through the gateway instead: claude-route 9router'
+  fi
 }
 
 cmd_set() {  # cmd_set <9router|anthropic>
@@ -294,7 +302,7 @@ cmd_status() {
     esac
   else
     case "$(uname -s)" in
-      Darwin) head="$head; credentials in Keychain (unchecked)" ;;
+      Darwin) head="$head; credentials in Keychain (unchecked on macOS — verify once with a live prompt)" ;;
       *)
         if oauth_session_alive; then
           head="$head; OAuth session live"
