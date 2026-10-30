@@ -1,0 +1,322 @@
+#!/usr/bin/env bash
+#
+# bin/claude-route — global routing toggle for Claude Code.
+#
+# Claude Code routing must live in exactly ONE place: a marked block of
+# exports in ~/.localrc. A settings.json `env` value silently wins over the
+# shell (a settings env can SET a variable but never UNSET it), so the layer's
+# settings template stays route-agnostic and this script moves the block
+# between two states:
+#
+#   9router    exports uncommented — route through the gateway named in the
+#              block (URL + auth token + model ids = the layer's policy)
+#   anthropic  exports commented   — official Anthropic API, subscription
+#              OAuth from `claude /login` (~/.claude/.credentials.json)
+#
+# The two names describe the personal layer's policy; the mechanism is dumb:
+# comment/uncomment the block's own lines. Values are never read, logged, or
+# rewritten — a per-machine URL or a key rotation is a localrc edit, not a
+# code change.
+#
+# Exit codes: 0 ok/idempotent · 1 usage · 2 target health refused · 3 init
+#             needed or already managed · 4 settings.json not route-agnostic ·
+#             5 stray routing exports outside the block · 6 ~/.localrc
+#             missing/unwritable · 10 inconsistent state (status)
+
+set -euo pipefail
+
+LOCALRC="$HOME/.localrc"
+SETTINGS="$HOME/.claude/settings.json"
+CREDENTIALS="$HOME/.claude/.credentials.json"
+BEGIN='# >>> claude-route >>>'
+END='# <<< claude-route <<<'
+
+# Routing variables owned by the block, in canonical order. Any of these in a
+# settings.json `env` would override the shell — guard A rejects the toggle.
+VARS='ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL CLAUDE_CODE_MAX_CONTEXT_TOKENS CLAUDE_CODE_AUTO_COMPACT_WINDOW'
+
+RESTART_NOTE='claude-route: restart your Claude Code sessions — a live session keeps its old routing (hot switch breaks the hybrid classifier, lesson 2026-10-26)'
+
+die() { echo "claude-route: $2" >&2; exit "$1"; }
+
+usage() {
+  cat <<'EOF'
+usage: claude-route {9router|anthropic|status|init} [--force]
+
+  init        absorb existing routing lines (~/.localrc + settings.json env)
+              into the managed block — run once per machine
+  9router     uncomment the block: route through the gateway it names
+  anthropic   comment the block: official Anthropic API (subscription OAuth)
+  status      current mode, target health, coherence checks
+EOF
+  exit 1
+}
+
+# --- block plumbing (line numbers; empty = absent) -----------------------------
+
+begin_line() { grep -n "^$BEGIN" "$LOCALRC" 2>/dev/null | head -1 | cut -d: -f1 || true; }
+end_line()   { grep -n "^$END"  "$LOCALRC" 2>/dev/null | head -1 | cut -d: -f1 || true; }
+
+require_block() {  # sets BLOCK_BEGIN / BLOCK_END; dies 3 when absent
+  BLOCK_BEGIN=$(begin_line); BLOCK_END=$(end_line)
+  { [ -n "$BLOCK_BEGIN" ] && [ -n "$BLOCK_END" ] && [ "$BLOCK_END" -gt "$BLOCK_BEGIN" ]; } \
+    || die 3 'no managed block in ~/.localrc — run: claude-route init'
+}
+
+block_active() {  # 0 = some export live (9router), 1 = all commented (anthropic)
+  awk -v b="$1" -v e="$2" 'NR>b && NR<e && /^export /{a=1} END{exit a?0:1}' "$LOCALRC"
+}
+
+block_value() {  # block_value <begin> <end> <VAR> — value with quotes stripped
+  sed -n "${1},${2}p" "$LOCALRC" \
+    | grep -E "^(# ?)?export $3=" | head -1 \
+    | sed -E "s/^(# ?)?export $3=//; s/^'//; s/'\$//" || true
+}
+
+active_names() {  # variable names currently exported inside the block
+  sed -n "${1},${2}p" "$LOCALRC" | grep '^export ' | cut -d= -f1 \
+    | sed 's/^export //' | tr '\n' ' ' | sed 's/ $//' || true
+}
+
+shell_quote() {
+  case $1 in
+    *[!A-Za-z0-9_:@%+=.,./-]*) printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# Rewrite lines begin..end through a sed expression, backup first (house
+# convention .bak.<stamp>), swap via a sibling temp file so mv stays on the
+# same filesystem — no `sed -i` (GNU/BSD portability).
+rewrite() {  # rewrite <begin> <end> <sed-expr>
+  local b=$1 e=$2 tmp
+  tmp=$(mktemp "$LOCALRC.tmp.XXXXXX")
+  {
+    if [ "$b" -gt 1 ]; then sed -n "1,$((b-1))p" "$LOCALRC"; fi
+    sed -n "${b},${e}p" "$LOCALRC" | sed "$3"
+    sed -n "$((e+1)),\$p" "$LOCALRC"
+  } > "$tmp"
+  cp -p "$LOCALRC" "$LOCALRC.bak.$(date +%Y%m%d_%H%M%S)"
+  mv "$tmp" "$LOCALRC"
+  chmod 600 "$LOCALRC"
+}
+
+# --- guards ---------------------------------------------------------------------
+
+# Guard A: a settings.json `env` entry would silently win over the shell and
+# can never be unset from localrc — the 2026-10-26 regression shape.
+check_settings() {  # dies 4
+  [ -f "$SETTINGS" ] || return 0
+  local keys offending=''
+  keys=$(jq -r '.env // {} | keys[]' "$SETTINGS" 2>/dev/null) \
+    || die 4 "cannot parse $SETTINGS — routing guard (fix the file, or the layer template)"
+  for k in $keys; do
+    case " $VARS " in *" $k "*) offending="$offending $k" ;; esac
+  done
+  [ -z "$offending" ] \
+    || die 4 "settings.json env still carries routing (${offending# }) — fix the layer template and re-run setup"
+}
+
+# Guard B: live routing exports outside the block would fight it.
+check_stray() {  # check_stray <begin> <end> — dies 5
+  local b=$1 e=$2 stray='' ln=0 line name
+  while IFS= read -r line; do
+    ln=$((ln+1))
+    if [ "$ln" -ge "$b" ] && [ "$ln" -le "$e" ]; then continue; fi
+    case $line in
+      'export '*)
+        name=${line%%=*}; name=${name#export }
+        case " $VARS " in *" $name "*) stray="$stray $name" ;; esac ;;
+    esac
+  done < "$LOCALRC"
+  [ -z "$stray" ] || die 5 "stray routing exports outside the block (${stray# }) — run: claude-route init"
+}
+
+health_gateway() {  # any HTTP answer means alive (307 on /, 404 on /health)
+  local b=$1 e=$2 url code
+  url=$(block_value "$b" "$e" ANTHROPIC_BASE_URL)
+  [ -n "$url" ] || die 2 'block has no ANTHROPIC_BASE_URL — cannot health-check the gateway'
+  code=$(curl -s -o /dev/null -m 3 -w '%{http_code}' "$url" || true)
+  [ "$code" != '000' ] \
+    || die 2 "gateway not answering at the block's URL (tailnet down?) — nothing was written; retry later or: claude-route anthropic"
+}
+
+health_anthropic() {
+  case "$(uname -s)" in
+    Darwin) echo 'claude-route: note — macOS keeps /login credentials in the Keychain; skipping the file check'; return 0 ;;
+  esac
+  if [ -s "$CREDENTIALS" ]; then return 0; fi
+  if [ "${FORCE:-0}" = 1 ]; then
+    echo 'claude-route: WARN — forcing anthropic without ~/.claude/.credentials.json (no /login state found)'
+    return 0
+  fi
+  die 2 'no ~/.claude/.credentials.json — run claude /login first, or pass --force'
+}
+
+# --- subcommands ------------------------------------------------------------------
+
+cmd_init() {
+  local first
+  first=$(begin_line)
+  if [ -n "$first" ]; then
+    local last mode=anthropic
+    last=$(end_line)
+    if [ -n "$last" ] && block_active "$first" "$last"; then mode=9router; fi
+    echo "claude-route: block already present (mode $mode) — nothing to init"
+    exit 3
+  fi
+  local block='' absorbed='' src_local='' src_settings='' v line val from
+  for v in $VARS; do
+    line=''
+    # 1) an existing export line in ~/.localrc (last occurrence wins — closest
+    #    to the current state; a commented line keeps its commented intent).
+    line=$(grep -E "^(# ?)?export $v=" "$LOCALRC" | tail -1) || true
+    [ -n "$line" ] && from=localrc
+    # 2) fall back to the live settings.json env — where legacy routing lived.
+    if [ -z "$line" ] && [ -f "$SETTINGS" ]; then
+      val=$(jq -r --arg k "$v" '.env // {} | .[$k] // empty' "$SETTINGS" 2>/dev/null) || val=''
+      if [ -n "$val" ]; then
+        line="export $v=$(shell_quote "$val")"
+        from=settings
+      fi
+    fi
+    if [ -n "$line" ]; then
+      block="${block}${line}
+"
+      if [ "$from" = localrc ]; then src_local="$src_local $v"; else src_settings="$src_settings $v"; fi
+      absorbed="$absorbed $v"
+    fi
+  done
+  case " $absorbed " in
+    *' ANTHROPIC_BASE_URL '*) ;;
+    *) die 3 'ANTHROPIC_BASE_URL not found in ~/.localrc or settings.json — fill the block by hand (see the layer claude/localrc.example)' ;;
+  esac
+  case " $absorbed " in
+    *' ANTHROPIC_AUTH_TOKEN '*) ;;
+    *) die 3 'ANTHROPIC_AUTH_TOKEN not found in ~/.localrc or settings.json — fill the block by hand (see the layer claude/localrc.example)' ;;
+  esac
+  # Absorb: drop the live routing lines taken from localrc (commented ones are
+  # inert — guard B only flags live exports), append the marked block.
+  local tmp; tmp=$(mktemp "$LOCALRC.tmp.XXXXXX")
+  awk -v vars="$absorbed" 'BEGIN{n=split(vars,a," ")}
+    {d=0; for(i=1;i<=n;i++) if ($0 ~ "^export " a[i] "=") d=1; if(!d) print}' \
+    "$LOCALRC" > "$tmp"
+  printf '\n%s (managed by claude-route — do not edit inside)\n%s%s\n' \
+    "$BEGIN" "$block" "$END" >> "$tmp"
+  cp -p "$LOCALRC" "$LOCALRC.bak.$(date +%Y%m%d_%H%M%S)"
+  mv "$tmp" "$LOCALRC"
+  chmod 600 "$LOCALRC"
+  echo "claude-route: block written — absorbed from localrc:${src_local:- none}; from settings.json:${src_settings:- none}"
+  echo 'claude-route: routing unchanged (exports stay live: 9router) — no session restart needed'
+}
+
+cmd_set() {  # cmd_set <9router|anthropic>
+  local want=$1 b e active expr
+  require_block; b=$BLOCK_BEGIN; e=$BLOCK_END
+  check_settings
+  check_stray "$b" "$e"
+  if block_active "$b" "$e"; then active=9router; else active=anthropic; fi
+  if [ "$want" = "$active" ]; then
+    echo "claude-route: already on $want — nothing to do"
+    exit 0
+  fi
+  if [ "$want" = 9router ]; then
+    health_gateway "$b" "$e"
+    expr='s/^# export /export /'
+  else
+    health_anthropic
+    expr='s/^export /# export /'
+  fi
+  rewrite "$b" "$e" "$expr"
+  echo "claude-route: switched to $want (routing exports in ~/.localrc)"
+  echo "$RESTART_NOTE"
+}
+
+cmd_status() {
+  local b e active names problems=0
+  b=$(begin_line)
+  if [ -z "$b" ]; then
+    echo 'claude-route: unmanaged — no block in ~/.localrc (run: claude-route init)'
+    exit 10
+  fi
+  require_block; b=$BLOCK_BEGIN; e=$BLOCK_END
+  if block_active "$b" "$e"; then active=9router; else active=anthropic; fi
+  names=$(active_names "$b" "$e")
+  local head="mode $active via ~/.localrc block"
+  local url code
+  if [ "$active" = 9router ]; then
+    url=$(block_value "$b" "$e" ANTHROPIC_BASE_URL)
+    code=$(curl -s -o /dev/null -m 3 -w '%{http_code}' "$url" 2>/dev/null || true)
+    if [ -n "$code" ] && [ "$code" != '000' ]; then
+      head="$head; gateway alive (HTTP $code)"
+    else
+      head="$head; WARN gateway not answering"
+      problems=1
+    fi
+    head="$head; active: ${names:-none}"
+  else
+    case "$(uname -s)" in
+      Darwin) head="$head; credentials in Keychain (unchecked)" ;;
+      *)
+        if [ -s "$CREDENTIALS" ]; then
+          head="$head; OAuth credentials present"
+        else
+          head="$head; WARN no ~/.claude/.credentials.json (claude /login)"
+          problems=1
+        fi ;;
+    esac
+  fi
+  if ! check_settings_quiet; then head="$head; WARN routing keys in settings.json env"; problems=1; fi
+  if ! check_stray_quiet "$b" "$e"; then head="$head; WARN stray exports outside block"; problems=1; fi
+  echo "$head"
+  [ "$problems" = 0 ] || exit 10
+}
+
+# Quiet variants for status (report, never die).
+check_settings_quiet() {
+  [ -f "$SETTINGS" ] || return 0
+  local keys k
+  keys=$(jq -r '.env // {} | keys[]' "$SETTINGS" 2>/dev/null) || return 1
+  for k in $keys; do
+    case " $VARS " in *" $k "*) return 1 ;; esac
+  done
+  return 0
+}
+check_stray_quiet() {
+  local b=$1 e=$2 ln=0 line name
+  while IFS= read -r line; do
+    ln=$((ln+1))
+    if [ "$ln" -ge "$b" ] && [ "$ln" -le "$e" ]; then continue; fi
+    case $line in
+      'export '*)
+        name=${line%%=*}; name=${name#export }
+        case " $VARS " in *" $name "*) return 1 ;; esac ;;
+    esac
+  done < "$LOCALRC"
+  return 0
+}
+
+# --- main ---------------------------------------------------------------------------
+
+FORCE=0
+CMD=''
+for a in "$@"; do
+  case $a in
+    --force) FORCE=1 ;;
+    -h|--help) usage ;;
+    -*) echo "claude-route: unknown option $a" >&2; usage ;;
+    *) if [ -n "$CMD" ]; then usage; fi; CMD="$a" ;;
+  esac
+done
+[ -n "$CMD" ] || usage
+export FORCE
+
+[ -f "$LOCALRC" ] || die 6 'no ~/.localrc — see the layer claude/localrc.example, then re-run'
+
+case "$CMD" in
+  init)      cmd_init ;;
+  9router)   cmd_set 9router ;;
+  anthropic) cmd_set anthropic ;;
+  status)    cmd_status ;;
+  *)         usage ;;
+esac

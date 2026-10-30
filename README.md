@@ -47,7 +47,7 @@ userland-installable; the clipboard cascade in tmux uses `clip.exe`
 | `local/` | Linux userland tools: pinned tarballs (`manifest`), cmake + LLVM prefixes, guarded zsh/tmux source builds — no sudo |
 | `vscode/` | VS Code extension set (generic) |
 | `claude/` | AI-assistant hook plumbing (generic) |
-| `bin/` | scripts on PATH — `dot` updates everything |
+| `bin/` | scripts on PATH — `dot` updates everything, `claude-route` toggles Claude Code routing |
 
 ## How it works
 
