@@ -33,7 +33,9 @@ END='# <<< claude-route <<<'
 
 # Routing variables owned by the block, in canonical order. Any of these in a
 # settings.json `env` would override the shell — guard A rejects the toggle.
-VARS='ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL CLAUDE_CODE_MAX_CONTEXT_TOKENS CLAUDE_CODE_AUTO_COMPACT_WINDOW'
+# (Compact-window tuning travels with the routing block: its sane value is
+# coupled to the gateway's context window, not the native one.)
+VARS='ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL CLAUDE_CODE_MAX_CONTEXT_TOKENS CLAUDE_CODE_AUTO_COMPACT_WINDOW CLAUDE_AUTOCOMPACT_PCT_OVERRIDE'
 
 RESTART_NOTE='claude-route: restart your Claude Code sessions — a live session keeps its old routing (hot switch breaks the hybrid classifier, lesson 2026-10-26)'
 
@@ -70,7 +72,7 @@ block_active() {  # 0 = some export live (9router), 1 = all commented (anthropic
 block_value() {  # block_value <begin> <end> <VAR> — value with quotes stripped
   sed -n "${1},${2}p" "$LOCALRC" \
     | grep -E "^(# ?)?export $3=" | head -1 \
-    | sed -E "s/^(# ?)?export $3=//; s/^'//; s/'\$//" || true
+    | sed -E "s/^(# ?)?export $3=//; s/^['\"]//; s/['\"]\$//" || true
 }
 
 active_names() {  # variable names currently exported inside the block
