@@ -141,11 +141,28 @@ check_stray() {  # check_stray <begin> <end> — dies 5
   [ -z "$stray" ] || die 5 "stray routing exports outside the block (${stray# }) — run: claude-route init"
 }
 
+gateway_http_code() {  # gateway_http_code <url> — use the proxy Claude Code will use
+  local url=$1 proxy=''
+  # curl ignores uppercase HTTP_PROXY. Read the layer's explicit proxy instead
+  # of testing direct access and reporting a healthy gateway as unreachable.
+  if [ -f "$SETTINGS" ]; then
+    case $url in
+      http://*) proxy=$(jq -r '.env.HTTP_PROXY // .env.http_proxy // empty' "$SETTINGS" 2>/dev/null) || proxy='' ;;
+      https://*) proxy=$(jq -r '.env.HTTPS_PROXY // .env.https_proxy // empty' "$SETTINGS" 2>/dev/null) || proxy='' ;;
+    esac
+  fi
+  if [ -n "$proxy" ]; then
+    curl -x "$proxy" -s -o /dev/null -m 3 -w '%{http_code}' "$url"
+  else
+    curl -s -o /dev/null -m 3 -w '%{http_code}' "$url"
+  fi
+}
+
 health_gateway() {  # any HTTP answer means alive (307 on /, 404 on /health)
   local b=$1 e=$2 url code
   url=$(block_value "$b" "$e" ANTHROPIC_BASE_URL)
   [ -n "$url" ] || die 2 'block has no ANTHROPIC_BASE_URL — cannot health-check the gateway'
-  code=$(curl -s -o /dev/null -m 3 -w '%{http_code}' "$url" || true)
+  code=$(gateway_http_code "$url" || true)
   [ "$code" != '000' ] \
     || die 2 "gateway not answering at the block's URL (tailnet down?) — nothing was written; retry later or: claude-route anthropic"
 }
@@ -283,7 +300,7 @@ cmd_status() {
   local url code
   if [ "$active" = 9router ]; then
     url=$(block_value "$b" "$e" ANTHROPIC_BASE_URL)
-    code=$(curl -s -o /dev/null -m 3 -w '%{http_code}' "$url" 2>/dev/null || true)
+    code=$(gateway_http_code "$url" 2>/dev/null || true)
     if [ -n "$code" ] && [ "$code" != '000' ]; then
       head="$head; gateway alive (HTTP $code)"
     else
