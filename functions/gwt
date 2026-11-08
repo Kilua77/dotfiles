@@ -1,0 +1,79 @@
+# gwt [branch] — open a worktree for <branch> in a dedicated tmux session
+# named <repo>@<branch>, so the tm picker doubles as a worktree switcher.
+# With no argument, fzf-picks an existing worktree; `gwt -d <branch>`
+# removes the worktree and kills its session (the branch itself is kept).
+#
+# Convention: worktrees live as siblings of the main checkout, branch
+# slashes turned into dashes — ~/Workspace/myrepo gets fix-auth checked
+# out at ~/Workspace/myrepo-fix-auth. The main checkout is located via
+# `git worktree list`, so gwt behaves the same from the main repo or any
+# of its worktrees. Branch resolution mirrors gf: existing local branch,
+# else origin/<branch> (new local branch tracking it), else a new branch
+# off HEAD. Without tmux the function just cds into the worktree.
+
+local main repo parent sel tag dir session
+
+main=$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | head -n 1)
+if [[ -z "$main" ]]; then
+    echo "gwt: not inside a git repository" >&2
+    return 1
+fi
+repo=${main:t}
+parent=${main:h}
+
+# gwt -d <branch> — remove the worktree (branch kept).
+if [[ "${1:-}" == -d ]]; then
+    if [[ -z "${2:-}" ]]; then
+        echo "usage: gwt -d <branch>" >&2
+        return 1
+    fi
+    tag=${2//\//-}
+    dir=$parent/$repo-$tag
+    session=$repo@$tag
+    command -v tmux >/dev/null 2>&1 && tmux kill-session -t "$session" 2>/dev/null
+    git worktree remove "$dir" && echo "gwt: removed $dir (branch '$2' kept)"
+    return
+fi
+
+sel=${1:-}
+if [[ -z "$sel" ]]; then
+    if ! command -v fzf >/dev/null 2>&1; then
+        echo "gwt: the picker needs fzf — use gwt <branch>" >&2
+        return 1
+    fi
+    # Existing worktrees as "path<TAB>branch" lines; cut keeps the branch.
+    sel=$(git worktree list --porcelain | awk '
+        /^worktree / { path = substr($0, 10) }
+        /^branch /   { branch = substr($0, 8); sub(/^refs\/heads\//, "", branch) }
+        /^$/         { printf "%s\t%s\n", path, branch; path = ""; branch = "" }
+        END          { if (path != "") printf "%s\t%s\n", path, branch }' \
+        | fzf --prompt='worktree> ' | cut -f2)
+    [[ -n "$sel" ]] || return 0
+fi
+
+tag=${sel//\//-}
+dir=$parent/$repo-$tag
+session=$repo@$tag
+
+# Create the worktree if it does not exist yet.
+if ! git worktree list --porcelain | grep -qx -F "worktree $dir"; then
+    if git show-ref --verify --quiet "refs/heads/$sel"; then
+        git worktree add "$dir" "$sel"
+    elif git show-ref --verify --quiet "refs/remotes/origin/$sel"; then
+        git worktree add -b "$sel" "$dir" "origin/$sel"
+    else
+        git worktree add -b "$sel" "$dir"
+    fi
+fi
+
+if command -v tmux >/dev/null 2>&1; then
+    if [[ -n "${TMUX:-}" ]]; then
+        tmux has-session -t "$session" 2>/dev/null ||
+            tmux new-session -d -s "$session" -c "$dir"
+        tmux switch-client -t "$session"
+    else
+        tmux new-session -A -s "$session" -c "$dir"
+    fi
+else
+    cd "$dir"
+fi

@@ -6,6 +6,10 @@
 #   - plain fetch is `gfe`, not gf.
 #   - gpsup inlines `git branch --show-current` instead of the omz
 #     git_current_branch helper this repo does not ship.
+#   - worktree block: gwta/gwtmv/gwtrm match omz; `gwtl` (omz says
+#     gwtls) and `gwtp` are local names. The orchestrator that also
+#     opens a tmux session per worktree is the autoloaded function in
+#     functions/gwt, deliberately not an alias.
 
 alias g='git'
 alias ga='git add'
@@ -53,3 +57,8 @@ alias gst='git status'
 alias gsta='git stash push'
 alias gstl='git stash list'
 alias gstp='git stash pop'
+alias gwta='git worktree add'
+alias gwtl='git worktree list'
+alias gwtmv='git worktree move'
+alias gwtrm='git worktree remove'
+alias gwtp='git worktree prune'
